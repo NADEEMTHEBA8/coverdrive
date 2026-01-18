@@ -1,0 +1,58 @@
+# ─── Python ───────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# ─── Test / type / lint caches ────────────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ─── Secrets / env ────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ─── Data + warehouse ─────────────────────────────────────────────────
+# Local warehouse files are derived; don't commit them.
+data/
+*.duckdb
+*.duckdb.wal
+
+# ─── dbt ──────────────────────────────────────────────────────────────
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml
+
+# ─── Airflow ──────────────────────────────────────────────────────────
+airflow/logs/
+airflow/airflow.cfg
+airflow/airflow.db
+airflow/webserver_config.py
+airflow/standalone_admin_password.txt
+
+# ─── Terraform ────────────────────────────────────────────────────────
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/.terraform.lock.hcl
+infra/terraform/*.tfvars
+!infra/terraform/example.tfvars
+
+# ─── IDE ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store
