@@ -1,12 +1,10 @@
-"""Pull career stats from ESPNcricinfo and dump to parquet.
-
-Prototype — no retries, no config. Just want to see if I can get the data.
-"""
+"""Pull career stats from ESPNcricinfo, write to s3 (minio locally) as parquet."""
 from __future__ import annotations
 
 import io
-from pathlib import Path
+import os
 
+import boto3
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -30,12 +28,28 @@ def parse_table(html: str) -> pd.DataFrame:
     return pd.read_html(io.StringIO(str(tables[2])))[0]
 
 
+def s3_client():
+    return boto3.client(
+        "s3",
+        endpoint_url=os.environ["COVERDRIVE_S3_ENDPOINT"],
+        aws_access_key_id=os.environ["COVERDRIVE_S3_ACCESS_KEY"],
+        aws_secret_access_key=os.environ["COVERDRIVE_S3_SECRET_KEY"],
+    )
+
+
+def write_parquet(df: pd.DataFrame, key: str) -> None:
+    buf = io.BytesIO()
+    df.to_parquet(buf, compression="snappy")
+    buf.seek(0)
+    s3_client().put_object(
+        Bucket=os.environ["COVERDRIVE_S3_BUCKET"], Key=key, Body=buf.getvalue()
+    )
+
+
 def main() -> None:
-    out = Path("data/bronze/batting")
-    out.mkdir(parents=True, exist_ok=True)
     df = parse_table(fetch_page(BATTING_URL))
-    df.to_parquet(out / "data.parquet")
-    print(f"wrote {len(df)} rows")
+    write_parquet(df, "bronze/batting/data.parquet")
+    print(f"wrote {len(df)} rows to s3")
 
 
 if __name__ == "__main__":
