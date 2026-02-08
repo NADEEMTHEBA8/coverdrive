@@ -46,3 +46,14 @@ def transform_batting(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             out[col] = pd.to_numeric(df[col], errors="coerce").astype("Float64")
     return out.dropna(subset=["player", "runs"])
+
+
+HS_STAR_RE = re.compile(r"^(\d+)(\*?)$")
+
+
+def strip_hs_star(s: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """espn appends '*' to high scores made not-out. split into (value, flag)."""
+    extracted = s.astype(str).str.extract(HS_STAR_RE)
+    value = pd.to_numeric(extracted[0], errors="coerce").astype("Int64")
+    not_out = extracted[1].fillna("").eq("*")
+    return value, not_out
