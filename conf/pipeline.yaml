@@ -1,0 +1,27 @@
+version: 1
+
+sources:
+  batting:
+    base_url: "https://stats.espncricinfo.com/ci/engine/stats/index.html"
+    params:
+      class: 2
+      type: batting
+      template: results
+      size: 200
+    pages_to_fetch: 14
+    target_table: batting
+
+storage:
+  bronze_prefix: "bronze"
+  silver_prefix: "silver"
+  partition_key: "ingestion_date"
+  compression: "snappy"
+
+http:
+  timeout_seconds: 30
+  user_agent: "Coverdrive/0.1"
+  retry:
+    max_attempts: 5
+    initial_wait_seconds: 2
+    max_wait_seconds: 30
+    multiplier: 2
