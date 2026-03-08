@@ -1,0 +1,36 @@
+version: 2
+
+# Declares Silver Parquet partitions on MinIO/S3 as dbt sources.
+# Uses dbt-duckdb's `meta.external_location`: {name} is substituted with the
+# table name, so this one entry covers both batting and bowling.
+
+sources:
+  - name: silver
+    description: "Cleaned, schema-conformed cricket data from the Silver lakehouse layer."
+    meta:
+      external_location: "s3://{{ env_var('COVERDRIVE_S3_BUCKET', 'coverdrive') }}/silver/{name}/ingestion_date=*/data.parquet"
+      owner: "data-platform@boundaryline.example"
+    tables:
+      - name: batting
+        description: "One row per batsman, career-aggregated. Updated daily."
+        columns:
+          - name: player
+            description: "Lowercased player name (without country tag)."
+            tests:
+              - not_null
+          - name: runs
+            description: "Career total runs scored in ODIs."
+            tests:
+              - not_null
+
+      - name: bowling
+        description: "One row per bowler, career-aggregated. Updated daily."
+        columns:
+          - name: player
+            description: "Lowercased player name (without country tag)."
+            tests:
+              - not_null
+          - name: wickets
+            description: "Career total wickets taken in ODIs."
+            tests:
+              - not_null

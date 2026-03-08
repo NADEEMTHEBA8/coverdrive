@@ -1,0 +1,37 @@
+# Two targets share the same models — the swap demonstrates warehouse portability.
+# `dev` is the default: DuckDB reading Silver Parquet via httpfs from MinIO.
+# `ci` runs against Postgres so CI exercises the same SQL on a different engine.
+
+coverdrive:
+  target: dev
+
+  outputs:
+    # ─── Local development with DuckDB + MinIO ──────────────────────────────
+    dev:
+      type: duckdb
+      path: "{{ env_var('COVERDRIVE_WAREHOUSE_PATH', '../data/warehouse.duckdb') }}"
+      schema: main
+      extensions:
+        - httpfs    # S3 reads
+        - parquet   # explicit, though bundled
+      # DuckDB settings applied to every connection (s3 to MinIO).
+      settings:
+        s3_endpoint: "{{ env_var('COVERDRIVE_S3_ENDPOINT_HOST', 'localhost:9000') }}"
+        s3_access_key_id: "{{ env_var('COVERDRIVE_S3_ACCESS_KEY', 'minioadmin') }}"
+        s3_secret_access_key: "{{ env_var('COVERDRIVE_S3_SECRET_KEY', 'minioadmin') }}"
+        s3_use_ssl: "{{ env_var('COVERDRIVE_S3_USE_SSL', 'false') }}"
+        s3_url_style: "path"
+      threads: 4
+
+    # ─── CI: Postgres-backed dbt run ────────────────────────────────────────
+    # Demonstrates the same SQL builds against a real RDBMS. CI populates a
+    # seeded Postgres with the fixture data, then runs `dbt build`.
+    ci:
+      type: postgres
+      host: "{{ env_var('PGHOST', 'localhost') }}"
+      port: "{{ env_var('PGPORT', '5432') | as_number }}"
+      user: "{{ env_var('PGUSER', 'coverdrive') }}"
+      password: "{{ env_var('PGPASSWORD', 'coverdrive') }}"
+      dbname: "{{ env_var('PGDATABASE', 'coverdrive') }}"
+      schema: main
+      threads: 4

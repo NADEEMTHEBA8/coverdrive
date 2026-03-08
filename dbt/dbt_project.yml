@@ -1,0 +1,34 @@
+name: coverdrive
+version: "0.1.0"
+config-version: 2
+
+profile: coverdrive
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+analysis-paths: ["analyses"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - target
+  - dbt_packages
+
+# Default materializations by folder. Override per-model with config().
+models:
+  coverdrive:
+    +materialized: view
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts
+
+# Surface dbt run details in JSON logs — easier to parse from Airflow.
+flags:
+  use_colors: false
+  warn_error_options:
+    error: all
+    warn: ["NoNodesForSelectionCriteria"]
