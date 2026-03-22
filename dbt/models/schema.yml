@@ -1,0 +1,110 @@
+version: 2
+
+# ─── Staging ──────────────────────────────────────────────────────────────────
+models:
+  - name: stg_batting
+    description: "Light-touch staging view over Silver batting parquet."
+    columns:
+      - name: player
+        description: "Lowercased player name. Composite PK with career_start_year."
+        tests:
+          - not_null
+      - name: runs
+        description: "Career total runs."
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 25000
+      - name: strike_rate
+        description: "Strike rate (runs per 100 balls)."
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 500
+                where: "strike_rate is not null"
+
+  - name: stg_bowling
+    description: "Light-touch staging view over Silver bowling parquet."
+    columns:
+      - name: player
+        tests:
+          - not_null
+      - name: wickets
+        description: "Career total wickets."
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 700
+
+# ─── Marts ────────────────────────────────────────────────────────────────────
+  - name: dim_player
+    description: "Conformed player dimension — joins batting and bowling. One row per player."
+    columns:
+      - name: player
+        description: "Natural key, lowercased."
+        tests:
+          - not_null
+          - unique
+      - name: player_role
+        description: "batsman | bowler | all_rounder, derived from runs and wickets."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['batsman', 'bowler', 'all_rounder']
+      - name: pca_score
+        description: "Headline PCA score appropriate to the player's role."
+
+  - name: fact_career_stats
+    description: "Career-aggregated metrics in long format. One row per (player, metric)."
+    columns:
+      - name: player
+        tests:
+          - not_null
+      - name: metric_name
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  ['matches','runs','batting_average','strike_rate',
+                   'hundreds','fifties','fours','sixes',
+                   'wickets','bowling_average','economy_rate','bowling_strike_rate']
+      - name: metric_value
+        tests:
+          - not_null
+
+  - name: mart_top_batsmen
+    description: "Top batsmen ranked by PCA composite score. Powers /api/v1/rankings/batsmen."
+    columns:
+      - name: rank
+        tests:
+          - not_null
+          - unique
+      - name: player
+        tests:
+          - not_null
+          - unique
+      - name: pca_score
+        tests:
+          - not_null
+
+  - name: mart_top_bowlers
+    description: "Top bowlers ranked by PCA composite score. Powers /api/v1/rankings/bowlers."
+    columns:
+      - name: rank
+        tests:
+          - not_null
+          - unique
+      - name: player
+        tests:
+          - not_null
+          - unique
+      - name: pca_score
+        tests:
+          - not_null
