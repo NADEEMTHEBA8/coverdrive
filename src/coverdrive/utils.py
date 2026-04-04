@@ -61,7 +61,6 @@ class _StorageConfig(BaseModel):
 
 class _TableQualityConfig(BaseModel):
     min_rows: int
-    min_rows_fixtures: int | None = None  # used when COVERDRIVE_USE_FIXTURES=1
     max_null_ratio: float = Field(ge=0, le=1)
     runs_max: int | None = None
     strike_rate_max: float | None = None
@@ -95,7 +94,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     coverdrive_env: Literal["local", "ci", "prod"] = "local"
-    coverdrive_use_fixtures: bool = False  # when True, quality gates use the relaxed fixtures threshold
     log_level: str = "INFO"
 
     coverdrive_s3_endpoint: str = "http://localhost:9000"

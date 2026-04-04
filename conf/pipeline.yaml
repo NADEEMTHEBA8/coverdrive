@@ -25,3 +25,15 @@ http:
     initial_wait_seconds: 2
     max_wait_seconds: 30
     multiplier: 2
+
+quality:
+  batting:
+    min_rows: 2000
+    max_null_ratio: 0.02
+    runs_max: 25000
+    strike_rate_max: 500
+  bowling:
+    min_rows: 1500
+    max_null_ratio: 0.02
+    wickets_max: 700
+    economy_max: 15
