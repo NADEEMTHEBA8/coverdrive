@@ -167,6 +167,9 @@ _OPTIONAL_WHEN_FULLY_NULL: Final = frozenset({
 })
 
 
+# TODO: some columns (fours, sixes, high_score) are entirely null when the
+# scrape only hits the consolidated batting page. need a way to exempt those
+# without weakening the check for the real partial-failure case.
 def _check_null_ratios(df: pd.DataFrame, table: str, max_ratio: float) -> None:
     null_ratios = df.isna().mean()
     failed = {}
