@@ -1,0 +1,19 @@
+# Copy this file to `terraform.tfvars` and fill in real values.
+# `terraform.tfvars` is gitignored — never commit it.
+
+project_name = "coverdrive"
+environment  = "dev"
+aws_region   = "ap-south-1"
+owner        = "nadeem.theba"
+
+# Networking — defaults work; override only if 10.42.0.0/16 collides.
+# vpc_cidr = "10.42.0.0/16"
+
+# RDS sizing — defaults are free-tier eligible.
+# db_instance_class = "db.t4g.micro"
+# db_username       = "airflow"
+
+# Inject the password via env var instead of writing it here:
+#   export TF_VAR_db_password="$(aws ssm get-parameter --name /coverdrive/dev/db_password --with-decryption --query Parameter.Value --output text)"
+#   terraform apply
+# db_password = "<DO_NOT_WRITE_HERE>"
