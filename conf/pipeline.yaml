@@ -1,39 +1,63 @@
+# All pipeline parameters live here. Overridable via env vars (see utils.py).
+# Schema is enforced by coverdrive.utils.PipelineConfig (Pydantic).
+
 version: 1
 
+# ─── Sources ──────────────────────────────────────────────────────────
 sources:
   batting:
+    # ODI format (class=2). Pagination via `size` + `page` parameters.
     base_url: "https://stats.espncricinfo.com/ci/engine/stats/index.html"
     params:
-      class: 2
+      class: 2          # ODI
       type: batting
       template: results
       size: 200
-    pages_to_fetch: 14
+    pages_to_fetch: 14   # ~2,800 records — covers all batsmen with any ODI runs
     target_table: batting
+  bowling:
+    base_url: "https://stats.espncricinfo.com/ci/engine/stats/index.html"
+    params:
+      class: 2
+      type: bowling
+      template: results
+      size: 200
+    pages_to_fetch: 11   # ~2,200 records
+    target_table: bowling
 
+# ─── Storage ──────────────────────────────────────────────────────────
 storage:
+  # Hive-style partitioning by ingestion date — enables incremental loads
+  # and trivial partition-pruning in DuckDB.
   bronze_prefix: "bronze"
   silver_prefix: "silver"
   partition_key: "ingestion_date"
   compression: "snappy"
 
+# ─── HTTP behavior ────────────────────────────────────────────────────
 http:
   timeout_seconds: 30
-  user_agent: "Coverdrive/0.1"
+  user_agent: "Coverdrive/0.1 (+https://github.com/nadeem/coverdrive)"
+  # tenacity retry config; consumed by utils.with_retry
   retry:
     max_attempts: 5
     initial_wait_seconds: 2
     max_wait_seconds: 30
     multiplier: 2
 
+# ─── Quality thresholds ───────────────────────────────────────────────
+# Pandera schemas in coverdrive.quality enforce these as hard gates.
+# Soft-warn thresholds (logged but non-blocking) can be added later.
 quality:
   batting:
     min_rows: 2000
-    max_null_ratio: 0.02
-    runs_max: 25000
-    strike_rate_max: 500
+    min_rows_fixtures: 50
+    max_null_ratio: 0.02       # >2% nulls in a required column → halt
+    runs_max: 25000            # Tendulkar ceiling + headroom; sanity check
+    strike_rate_max: 500       # Defensive — real values cap near 300
   bowling:
     min_rows: 1500
+    min_rows_fixtures: 50
     max_null_ratio: 0.02
-    wickets_max: 700
-    economy_max: 15
+    wickets_max: 700           # Muralidaran ~534; headroom for future
+    economy_max: 15            # Defensive

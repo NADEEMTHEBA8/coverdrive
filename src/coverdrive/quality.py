@@ -54,12 +54,24 @@ class QualityGateFailure(RuntimeError):
 # via the helper functions below.
 
 
+def _resolve_min_rows(production: int, fixtures: int | None) -> int:
+    """Pick the threshold based on COVERDRIVE_USE_FIXTURES.
+
+    Falls back to the production value when no fixtures override is set.
+    This keeps the demo path (200-row sample) running without weakening
+    the real production gates.
+    """
+    if get_settings().coverdrive_use_fixtures and fixtures is not None:
+        return fixtures
+    return production
+
+
 def _batting_cfg() -> dict[str, float | int]:
     cfg = load_pipeline_config().quality.batting
     return {
         "runs_max": cfg.runs_max or 25000,
         "strike_rate_max": cfg.strike_rate_max or 500.0,
-        "min_rows": cfg.min_rows,
+        "min_rows": _resolve_min_rows(cfg.min_rows, cfg.min_rows_fixtures),
         "max_null_ratio": cfg.max_null_ratio,
     }
 
@@ -69,7 +81,7 @@ def _bowling_cfg() -> dict[str, float | int]:
     return {
         "wickets_max": cfg.wickets_max or 700,
         "economy_max": cfg.economy_max or 15.0,
-        "min_rows": cfg.min_rows,
+        "min_rows": _resolve_min_rows(cfg.min_rows, cfg.min_rows_fixtures),
         "max_null_ratio": cfg.max_null_ratio,
     }
 
@@ -167,9 +179,6 @@ _OPTIONAL_WHEN_FULLY_NULL: Final = frozenset({
 })
 
 
-# TODO: some columns (fours, sixes, high_score) are entirely null when the
-# scrape only hits the consolidated batting page. need a way to exempt those
-# without weakening the check for the real partial-failure case.
 def _check_null_ratios(df: pd.DataFrame, table: str, max_ratio: float) -> None:
     null_ratios = df.isna().mean()
     failed = {}
