@@ -11,7 +11,7 @@
 
 ## TL;DR
 
-The original methodology used a PCA-derived composite score as the **target variable** for a supervised regression task whose **features were the same statistics the PCA was computed from**. The "99% R²" reported in the dissertation was target leakge — the model was learning to invert a deterministic linear function it had been told about both sides of. This ADR documents the flaw, the corrected framing, and what now lives in the codebase.
+The original methodology used a PCA-derived composite score as the **target variable** for a supervised regression task whose **features were the same statistics the PCA was computed from**. The "99% R²" reported in the dissertation was target leakage — the model was learning to invert a deterministic linear function it had been told about both sides of. This ADR documents the flaw, the corrected framing, and what now lives in the codebase.
 
 ---
 
