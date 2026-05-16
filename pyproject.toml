@@ -1,26 +1,113 @@
 [project]
 name = "coverdrive"
-version = "0.0.1"
+version = "0.1.0"
+description = "Production-grade cricket performance data platform — ingestion, lakehouse, dbt warehouse, and serving API."
+readme = "README.md"
 requires-python = ">=3.11"
+authors = [{ name = "Nadeem Theba" }]
+license = { text = "MIT" }
+
 dependencies = [
+    # HTTP + scraping
     "requests>=2.31",
     "beautifulsoup4>=4.12",
-    "lxml>=5.0,<6.0",
+    "lxml>=5.0",
+    "tenacity>=8.2",
+    # Dataframes + storage
     "pandas>=2.2",
-    "pyarrow>=16.1",
+    "pyarrow>=15.0",
     "boto3>=1.34",
+    "s3fs>=2024.2",
+    "duckdb>=0.10",
+    # Quality + types
+    "pandera[pandas]>=0.18",
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
-    "PyYAML>=6.0",
+    # Observability
     "structlog>=24.1",
-    "tenacity>=8.2",
-    "pandera[pandas]>=0.18",
+    "prometheus-client>=0.20",
+    # Serving
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
-    "duckdb>=0.10",
-    "prometheus-client>=0.20",
+    # Config
+    "PyYAML>=6.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4",
+    "mypy>=1.9",
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "pytest-mock>=3.12",
+    "moto[s3]>=5.0",
+    "httpx>=0.27",
+    "types-PyYAML",
+    "types-requests",
+    "pre-commit>=3.7",
+]
+dbt = ["dbt-core>=1.7", "dbt-duckdb>=1.7"]
+
+[project.scripts]
+coverdrive-ingest = "coverdrive.ingestion:main"
+coverdrive-transform = "coverdrive.transform:main"
+coverdrive-quality = "coverdrive.quality:main"
+coverdrive-api = "coverdrive.api:main"
+
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ─── ruff: lint + format ──────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # bugbear
+    "UP",       # pyupgrade
+    "N",        # pep8-naming
+    "SIM",      # simplify
+    "RUF",      # ruff-specific
+    "ANN",      # type annotations
+    "S",        # bandit (security)
+    "T20",      # no print()
+]
+ignore = ["ANN101", "ANN102", "S101"]  # self/cls type hints, asserts in tests
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "S"]
+"airflow/**" = ["ANN201"]   # Airflow tasks return None implicitly
+
+# ─── mypy: strict ─────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["duckdb.*", "s3fs.*", "boto3.*", "botocore.*"]
+ignore_missing_imports = true
+
+# ─── pytest ───────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --strict-markers --cov=src/coverdrive --cov-report=term-missing --cov-fail-under=60"
+markers = [
+    "integration: requires docker-compose services running",
+    "slow: runs over 5 seconds",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/coverdrive"]
+omit = ["src/coverdrive/api.py"]  # FastAPI endpoints covered by integration tests
