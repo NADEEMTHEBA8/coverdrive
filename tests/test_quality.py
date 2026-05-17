@@ -13,7 +13,6 @@ from coverdrive.quality import (
     validate_table,
 )
 
-
 # ─── Happy path: real fixture data passes ─────────────────────────────────────
 
 
@@ -52,7 +51,7 @@ def test_schema_rejects_null_player(batting_csv: pd.DataFrame) -> None:
     """Player is the natural key — never nullable."""
     silver = transform.transform_batting(batting_csv)
     silver.loc[0, "player"] = None
-    with pytest.raises(Exception):  # noqa: B017, PT011
+    with pytest.raises(Exception):  # noqa: B017
         BattingSilverSchema.validate(silver, lazy=True)
 
 
@@ -61,7 +60,7 @@ def test_schema_rejects_invalid_career_span(batting_csv: pd.DataFrame) -> None:
     silver = transform.transform_batting(batting_csv).copy()
     silver["career_start_year"] = pd.array([2020] * len(silver), dtype="Int64")
     silver["career_end_year"] = pd.array([2000] * len(silver), dtype="Int64")
-    with pytest.raises(Exception):  # noqa: B017, PT011
+    with pytest.raises(Exception):  # noqa: B017
         BattingSilverSchema.validate(silver, lazy=True)
 
 

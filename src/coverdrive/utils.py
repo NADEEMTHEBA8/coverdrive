@@ -95,12 +95,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     coverdrive_env: Literal["local", "ci", "prod"] = "local"
-    coverdrive_use_fixtures: bool = False  # when True, quality gates use the relaxed fixtures threshold
+    coverdrive_use_fixtures: bool = (
+        False  # when True, quality gates use the relaxed fixtures threshold
+    )
     log_level: str = "INFO"
 
     coverdrive_s3_endpoint: str = "http://localhost:9000"
     coverdrive_s3_access_key: str = "minioadmin"
-    coverdrive_s3_secret_key: str = "minioadmin"
+    coverdrive_s3_secret_key: str = "minioadmin"  # noqa: S105
     coverdrive_s3_bucket: str = "coverdrive"
     coverdrive_s3_use_ssl: bool = False
 
@@ -207,7 +209,7 @@ def make_retrier(
 # ─── S3 helpers ──────────────────────────────────────────────────────────────
 
 
-def get_s3_client() -> Any:
+def get_s3_client() -> Any:  # noqa: ANN401
     """Return a boto3 S3 client configured for MinIO/AWS via env settings.
 
     If `coverdrive_s3_endpoint` is empty, the kwarg is omitted entirely so

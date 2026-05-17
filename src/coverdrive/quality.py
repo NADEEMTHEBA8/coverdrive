@@ -36,7 +36,7 @@ from coverdrive.utils import (
 log = get_logger(__name__)
 
 
-class QualityGateFailure(RuntimeError):
+class QualityGateFailure(RuntimeError):  # noqa: N818
     """Raised when one or more quality checks fail.
 
     Airflow's task-failure handler catches this and halts the DAG before
@@ -108,17 +108,17 @@ class BattingSilverSchema(pa.DataFrameModel):
     fifties: Series[pd.Int64Dtype] = pa.Field(ge=0, nullable=True)
 
     class Config:
-        strict = False        # Allow extra columns; we only enforce the contract.
-        coerce = False        # Transform.py already casts. Re-coercing hides bugs.
+        strict = False  # Allow extra columns; we only enforce the contract.
+        coerce = False  # Transform.py already casts. Re-coercing hides bugs.
 
     @pa.dataframe_check
-    def career_span_valid(cls, df: pd.DataFrame) -> Series[bool]:  # noqa: N805
+    def career_span_valid(cls, df: pd.DataFrame) -> Series[bool]:  # type: ignore[misc]  # noqa: N805
         """end_year >= start_year when both are present."""
         if "career_start_year" not in df or "career_end_year" not in df:
-            return pd.Series([True] * len(df))
+            return pd.Series([True] * len(df))  # type: ignore[return-value]
         both = df["career_start_year"].notna() & df["career_end_year"].notna()
         valid = df.loc[both, "career_end_year"] >= df.loc[both, "career_start_year"]
-        return pd.Series(True, index=df.index).where(~both, valid)
+        return pd.Series(True, index=df.index).where(~both, valid)  # type: ignore[return-value]
 
 
 class BowlingSilverSchema(pa.DataFrameModel):
@@ -172,11 +172,19 @@ def _check_row_count(df: pd.DataFrame, table: str, min_rows: int) -> None:
 # ESPN pages return different stat shapes). When 100% null, the column is
 # "optional" — exempt from the null-ratio gate. When partially null at a rate
 # above the threshold, that's a real partial-scrape signal and we halt.
-_OPTIONAL_WHEN_FULLY_NULL: Final = frozenset({
-    "fours", "sixes", "fours_is_lower_bound", "sixes_is_lower_bound",
-    "high_score", "high_score_not_out", "country_tag",
-    "career_start_year", "career_end_year",
-})
+_OPTIONAL_WHEN_FULLY_NULL: Final = frozenset(
+    {
+        "fours",
+        "sixes",
+        "fours_is_lower_bound",
+        "sixes_is_lower_bound",
+        "high_score",
+        "high_score_not_out",
+        "country_tag",
+        "career_start_year",
+        "career_end_year",
+    }
+)
 
 
 def _check_null_ratios(df: pd.DataFrame, table: str, max_ratio: float) -> None:

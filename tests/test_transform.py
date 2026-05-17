@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from coverdrive import transform
-
 
 # ─── Generic helpers ─────────────────────────────────────────────────────────
 
 
 def test_split_player_country() -> None:
-    series = pd.Series(
-        ["MS Dhoni (Asia/IND)", "SR Tendulkar (IND)", "Wasim Akram (PAK)"]
-    )
+    series = pd.Series(["MS Dhoni (Asia/IND)", "SR Tendulkar (IND)", "Wasim Akram (PAK)"])
     players, countries = transform._split_player_country(series)
     assert players.tolist() == ["ms dhoni", "sr tendulkar", "wasim akram"]
     assert countries.tolist() == ["asia/ind", "ind", "pak"]

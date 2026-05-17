@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import sys
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Annotated
 
 import duckdb
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -81,7 +81,7 @@ class PaginatedPlayers(BaseModel):
 
 
 @contextmanager
-def warehouse_conn() -> AsyncIterator[duckdb.DuckDBPyConnection]:
+def warehouse_conn() -> Iterator[duckdb.DuckDBPyConnection]:
     """Yield a read-only DuckDB connection. Closes deterministically."""
     settings = get_settings()
     conn = duckdb.connect(settings.coverdrive_warehouse_path, read_only=True)
@@ -116,7 +116,7 @@ app = FastAPI(
 
 
 @app.middleware("http")
-async def log_requests(request: Request, call_next):  # type: ignore[no-untyped-def]
+async def log_requests(request: Request, call_next):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201
     start = time.perf_counter()
     response = await call_next(request)
     duration_ms = (time.perf_counter() - start) * 1000
@@ -164,7 +164,7 @@ def readyz() -> ReadyResponse:
             batsmen_rows=int(batsmen[0]) if batsmen else 0,
             bowlers_rows=int(bowlers[0]) if bowlers else 0,
         )
-    except Exception as e:  # noqa: BLE001 — readyz must never raise
+    except Exception as e:
         log.warning("api.readyz_failed", error=str(e))
         return ReadyResponse(
             status="degraded", warehouse_reachable=False, batsmen_rows=0, bowlers_rows=0

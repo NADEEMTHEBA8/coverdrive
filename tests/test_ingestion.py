@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -41,9 +40,7 @@ def test_load_from_fixtures_missing_raises(tmp_path: Path) -> None:
         ingestion.load_from_fixtures("nonexistent", tmp_path)
 
 
-def test_write_bronze_is_idempotent(
-    batting_csv: pd.DataFrame, s3_bucket: str
-) -> None:
+def test_write_bronze_is_idempotent(batting_csv: pd.DataFrame, s3_bucket: str) -> None:
     """Writing the same DataFrame twice for the same partition produces one object."""
     fixed_date = datetime(2024, 6, 15, tzinfo=UTC)
     uri1 = ingestion.write_bronze(batting_csv, "batting", ingestion_date=fixed_date)
@@ -86,7 +83,7 @@ def test_fetch_page_retries_on_503(monkeypatch: pytest.MonkeyPatch) -> None:
     """Transient 503s recover; persistent ones raise after max_attempts."""
     call_count = {"n": 0}
 
-    def flaky_get(*args, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ANN002, ANN003
+    def flaky_get(*args, **kwargs):  # type: ignore[no-untyped-def]
         call_count["n"] += 1
         response = requests.Response()
         if call_count["n"] < 2:

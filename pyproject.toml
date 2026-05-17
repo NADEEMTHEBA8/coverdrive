@@ -81,7 +81,7 @@ select = [
     "S",        # bandit (security)
     "T20",      # no print()
 ]
-ignore = ["ANN101", "ANN102", "S101"]  # self/cls type hints, asserts in tests
+ignore = ["S101", "N806"]  # self/cls type hints, asserts in tests
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "S"]

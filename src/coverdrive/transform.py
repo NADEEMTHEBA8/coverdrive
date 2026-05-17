@@ -105,16 +105,34 @@ def transform_batting(df: pd.DataFrame) -> pd.DataFrame:
     # The dissertation has two — early scrapes used short ESPN names,
     # later runs renamed them. We normalize.
     rename_map = {
-        "Mat": "matches", "Inns": "innings", "NO": "not_outs", "BF": "balls_faced",
-        "Ave": "average", "SR": "strike_rate", "100": "hundreds", "50": "fifties",
-        "0": "ducks", "4s": "fours_raw", "6s": "sixes_raw", "HS": "high_score_raw",
-        "Player": "player_raw", "Span": "span_raw", "Runs": "runs",
+        "Mat": "matches",
+        "Inns": "innings",
+        "NO": "not_outs",
+        "BF": "balls_faced",
+        "Ave": "average",
+        "SR": "strike_rate",
+        "100": "hundreds",
+        "50": "fifties",
+        "0": "ducks",
+        "4s": "fours_raw",
+        "6s": "sixes_raw",
+        "HS": "high_score_raw",
+        "Player": "player_raw",
+        "Span": "span_raw",
+        "Runs": "runs",
         # Already-renamed inputs pass through:
-        "Matches": "matches", "Innings": "innings", "NotOuts": "not_outs",
-        "BallsFaced": "balls_faced", "Average": "average", "StrikeRate": "strike_rate",
-        "Hundreds": "hundreds", "Fifties": "fifties", "Ducks": "ducks",
+        "Matches": "matches",
+        "Innings": "innings",
+        "NotOuts": "not_outs",
+        "BallsFaced": "balls_faced",
+        "Average": "average",
+        "StrikeRate": "strike_rate",
+        "Hundreds": "hundreds",
+        "Fifties": "fifties",
+        "Ducks": "ducks",
         # Pre-split career-span convention:
-        "Start": "career_start_raw", "End": "career_end_raw",
+        "Start": "career_start_raw",
+        "End": "career_end_raw",
         # Pre-split country convention (some scrapes embed it in Player; some don't):
         "Country": "country_explicit",
     }
@@ -148,8 +166,16 @@ def transform_batting(df: pd.DataFrame) -> pd.DataFrame:
         )
 
     # Numeric columns: prefer already-numeric over re-parsing
-    for col in ("matches", "innings", "not_outs", "runs", "balls_faced",
-                "hundreds", "fifties", "ducks"):
+    for col in (
+        "matches",
+        "innings",
+        "not_outs",
+        "runs",
+        "balls_faced",
+        "hundreds",
+        "fifties",
+        "ducks",
+    ):
         if col in df.columns:
             out[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
     for col in ("average", "strike_rate"):
@@ -170,8 +196,19 @@ def transform_batting(df: pd.DataFrame) -> pd.DataFrame:
     # boolean flags become False. This makes the Silver schema input-independent
     # so downstream (dbt staging, Pandera gates) can rely on a stable column
     # set — see ADR-001's "data lineage" lesson.
-    INT_COLS = ("matches", "innings", "not_outs", "runs", "balls_faced",
-                "hundreds", "fifties", "ducks", "fours", "sixes", "high_score")
+    INT_COLS = (
+        "matches",
+        "innings",
+        "not_outs",
+        "runs",
+        "balls_faced",
+        "hundreds",
+        "fifties",
+        "ducks",
+        "fours",
+        "sixes",
+        "high_score",
+    )
     FLOAT_COLS = ("average", "strike_rate")
     BOOL_COLS = ("fours_is_lower_bound", "sixes_is_lower_bound", "high_score_not_out")
     STRING_COLS = ("country_tag",)
@@ -211,11 +248,19 @@ def transform_bowling(df: pd.DataFrame) -> pd.DataFrame:
     df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
 
     rename_map = {
-        "Mat": "matches", "Inns": "innings", "Balls": "balls_bowled",
-        "Runs": "runs_conceded", "Wkts": "wickets", "Ave": "bowling_average",
-        "Econ": "economy_rate", "SR": "bowling_strike_rate", "BBI": "best_bowling_innings",
-        "Player": "player_raw", "Span": "span_raw",
-        "4": "four_wicket_hauls", "5": "five_wicket_hauls",
+        "Mat": "matches",
+        "Inns": "innings",
+        "Balls": "balls_bowled",
+        "Runs": "runs_conceded",
+        "Wkts": "wickets",
+        "Ave": "bowling_average",
+        "Econ": "economy_rate",
+        "SR": "bowling_strike_rate",
+        "BBI": "best_bowling_innings",
+        "Player": "player_raw",
+        "Span": "span_raw",
+        "4": "four_wicket_hauls",
+        "5": "five_wicket_hauls",
     }
     df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
 
@@ -226,8 +271,15 @@ def transform_bowling(df: pd.DataFrame) -> pd.DataFrame:
     if "span_raw" in df.columns:
         out["career_start_year"], out["career_end_year"] = _parse_span(df["span_raw"])
 
-    for col in ("matches", "innings", "balls_bowled", "runs_conceded",
-                "wickets", "four_wicket_hauls", "five_wicket_hauls"):
+    for col in (
+        "matches",
+        "innings",
+        "balls_bowled",
+        "runs_conceded",
+        "wickets",
+        "four_wicket_hauls",
+        "five_wicket_hauls",
+    ):
         if col in df.columns:
             out[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
     for col in ("bowling_average", "economy_rate", "bowling_strike_rate"):
