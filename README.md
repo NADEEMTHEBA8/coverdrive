@@ -230,6 +230,52 @@ uploaded as an artifact.
 
 ---
 
+## Deployment
+
+The project is built to run identically locally and on AWS. The local stack
+(docker-compose: MinIO, Postgres, Airflow) mirrors the production topology
+so the application code paths don't change between environments.
+
+### Local (default)
+
+```bash
+make up         # MinIO, Postgres, Airflow via docker-compose
+make seed       # fixtures into Bronze
+make transform  # Bronze -> Silver
+make quality    # Pandera gate
+make dbt-build  # warehouse models
+make api        # FastAPI on :8000
+```
+
+### AWS (production topology)
+
+Infrastructure-as-code in `infra/terraform/` provisions the data plane:
+
+| Component          | AWS service                       | Local equivalent       |
+|--------------------|-----------------------------------|------------------------|
+| Lake storage       | S3 (`coverdrive-lake-*`)          | MinIO                  |
+| Metadata DB        | RDS Postgres (`db.t4g.micro`)     | Postgres container     |
+| Container registry | ECR (`coverdrive`)                | n/a (local images)     |
+| Logs               | CloudWatch log groups             | docker logs            |
+| Secrets            | IAM with least-privilege policies | `.env` file            |
+| Network            | VPC with public + private subnets | docker network         |
+
+The compute layer (Airflow scheduler/worker on ECS Fargate, FastAPI behind
+an ALB) is documented in `docs/ARCHITECTURE.md` but not yet codified —
+intentional, since standing up compute is the part with a real monthly cost.
+The data plane Terraform is the engineering artifact that matters for review.
+
+To plan against AWS (dry run, no apply):
+
+```bash
+cd infra/terraform
+terraform init
+terraform plan -var="environment=dev"
+```
+
+The module validates clean against the official AWS provider
+(`terraform validate` passes).
+
 ## Repository map
 
 ```
