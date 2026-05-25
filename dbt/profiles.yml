@@ -5,7 +5,7 @@ coverdrive:
     # ─── Local development: DuckDB reading Silver Parquet from MinIO ────
     dev:
       type: duckdb
-      path: "{{ env_var('COVERDRIVE_WAREHOUSE_PATH', '../data/warehouse.duckdb') }}"
+      path: "{{ env_var('COVERDRIVE_WAREHOUSE_PATH', 'data/warehouse.duckdb') }}"
       schema: main
       extensions:
         - httpfs
