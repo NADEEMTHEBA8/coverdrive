@@ -120,7 +120,7 @@ services:
     volumes:
       - ./data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 3

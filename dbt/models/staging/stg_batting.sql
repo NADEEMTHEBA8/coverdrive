@@ -29,3 +29,4 @@ select
     cast(high_score_not_out as boolean)   as high_score_not_out
 from {{ source('silver', 'batting') }}
 where runs is not null  -- enforced by Pandera too; defense-in-depth
+qualify row_number() over (partition by player order by career_start_year asc nulls last) = 1
