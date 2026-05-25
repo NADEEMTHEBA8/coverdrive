@@ -1,33 +1,18 @@
-"""Bronze ingestion: scrape ESPNcricinfo HTML tables into partitioned Parquet on S3.
-
-Design decisions worth defending in interviews:
-
-1. **Idempotent partitioned writes.** Each run writes to
-   `s3://bucket/bronze/<table>/ingestion_date=YYYY-MM-DD/data.parquet`.
-   Re-running the DAG for the same day overwrites the same key, so retries
-   are safe.
-
-2. **Lossless capture.** Bronze stores raw values verbatim — special characters
-   ('*' in HS, '+' in 4s/6s), original casing, all columns from the source.
-   Cleaning happens in the Silver layer where it's testable in isolation.
-
-3. **Retries with exponential backoff.** ESPNcricinfo returns 503s under load.
-   Tenacity wraps every HTTP call; backoff config lives in pipeline.yaml.
-
-4. **Fixture mode for offline/CI.** `--mode=fixtures` skips HTTP and ingests
-   the bundled CSVs in tests/fixtures/ — keeps CI deterministic.
-"""
+"""Bronze ingestion: scrape ESPNcricinfo HTML tables into partitioned Parquet on S3."""
 
 from __future__ import annotations
 
 import argparse
 import io
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import requests
 
 from coverdrive.utils import (
@@ -105,10 +90,19 @@ def scrape_table(source_name: str, cfg: PipelineConfig) -> pd.DataFrame:
         frames.append(df)
         page_log.info("scrape.page_ok", rows=len(df))
 
-    if not frames:
-        raise RuntimeError(f"No rows scraped for source {source_name!r}")
+        if not frames:
+            raise RuntimeError(f"No rows scraped for source {source_name!r}")
 
     combined = pd.concat(frames, ignore_index=True)
+
+    # Coerce all columns to numeric where possible; leave strings as-is
+    for col in combined.columns:
+        if combined[col].dtype == object:
+            combined[col] = pd.to_numeric(
+                combined[col],
+                errors="coerce",
+            )
+
     log.info("scrape.complete", source=source_name, total_rows=len(combined))
     return combined
 
@@ -146,22 +140,28 @@ def write_bronze(
     key = build_partition_path("bronze", table, ingestion_date)
     write_log = log.bind(table=table, key=key, rows=len(df))
 
-    # Materialize Parquet bytes in memory — works for our scale (~50K rows).
-    # At >10M rows we'd switch to pyarrow.dataset.write_dataset to stream.
-    buffer = io.BytesIO()
-    df.to_parquet(buffer, engine="pyarrow", compression=cfg.storage.compression, index=False)
-    buffer.seek(0)
+    table_pa = pa.Table.from_pandas(df)
 
-    s3 = get_s3_client()
-    s3.put_object(
-        Bucket=settings.coverdrive_s3_bucket,
-        Key=key,
-        Body=buffer.getvalue(),
-        ContentType="application/octet-stream",
-    )
+    with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
+        with pq.ParquetWriter(
+            tmp.name, table_pa.schema, compression=cfg.storage.compression
+        ) as writer:
+            # Chunking simulates processing large data volumes
+            for batch in table_pa.to_batches(max_chunksize=10000):
+                writer.write_batch(batch)
+
+        tmp.seek(0)
+        s3 = get_s3_client()
+        s3.upload_fileobj(
+            Fileobj=tmp,
+            Bucket=settings.coverdrive_s3_bucket,
+            Key=key,
+            ExtraArgs={"ContentType": "application/octet-stream"},
+        )
+        file_size = Path(tmp.name).stat().st_size
 
     uri = f"s3://{settings.coverdrive_s3_bucket}/{key}"
-    write_log.info("bronze.written", uri=uri, bytes=buffer.tell())
+    write_log.info("bronze.written", uri=uri, bytes=file_size)
     return uri
 
 

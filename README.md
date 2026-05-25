@@ -1,6 +1,6 @@
 # Coverdrive
 
-> A local analytical lakehouse for cricket career statistics — and the corrective successor to a flawed MSc dissertation.
+> A local analytical lakehouse for cricket career statistics.
 
 [![CI](https://github.com/nadeem/coverdrive/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
@@ -23,11 +23,7 @@ the API — runs locally with **one command**:
 make demo
 ```
 
-It is also the **successor and corrective** to my 2022 MSc dissertation,
-*"Predicting Greatest Cricketer by Comparing Different Machine Learning
-Approaches."* That project reported 99% accuracy and was wrong. The
-postmortem is in [`docs/adr-pca-leakage.md`](docs/adr-pca-leakage.md).
-If you read nothing else in this repo, read that.
+This project evolves the data modeling and methodologies originally explored in my 2022 MSc dissertation. For a technical deep-dive into resolving target leakage in the original PCA model, see [`docs/adr-pca-leakage.md`](docs/adr-pca-leakage.md).
 
 ---
 
@@ -146,16 +142,13 @@ make dbt-build   # warehouse
 
 ---
 
-## Engineering decisions
+## Architecture Choices
 
 1. **The pipeline halts on schema violation; it does not retry.**
    `quality_gate` has `retries=0`. A bad-data failure is a signal that
    the source changed — re-running won't fix it.
 
-2. **The transforms are pure functions.** `src/coverdrive/transform.py`
-   takes a DataFrame and returns a DataFrame — no I/O, no S3 client, no
-   filesystem. Tests in `tests/test_transform.py` run directly against
-   CSV fixtures with no infrastructure.
+2. **The core transformation logic is purely functional.** The data manipulation functions in `src/coverdrive/transform.py` are entirely decoupled from I/O. The extraction and loading functions handle S3 clients, allowing the transformation functions to be purely `pd.DataFrame -> pd.DataFrame` mapping, heavily unit-testable against CSV fixtures.
 
 3. **PCA is computed in dbt as a metric, not learned by a model.**
    The 2022 dissertation trained XGBoost to predict a PCA score derived
@@ -163,15 +156,9 @@ make dbt-build   # warehouse
    PCA now lives in `dbt/macros/compute_pca.sql` as a deterministic
    linear combination. Reasoning in [`adr-pca-leakage.md`](docs/adr-pca-leakage.md).
 
-4. **DuckDB over a managed warehouse, deliberately.** dbt-duckdb has the
-   same SQL surface as Snowflake/BigQuery for what this project needs,
-   costs nothing, and reads Parquet on S3 natively. The same dbt project
-   compiles against a managed warehouse with a profile change.
+4. **DuckDB over a managed warehouse.** dbt-duckdb provides the same SQL surface as Snowflake/BigQuery for what this project needs, costs nothing, and reads Parquet on S3 natively. The same dbt project compiles against a managed warehouse with a simple profile change.
 
-5. **The Terraform stops at the data-plane primitives.** It provisions
-   S3, RDS, ECR, IAM, and CloudWatch — and stops. No ECS service or MWAA
-   cluster, because standing up compute has a real monthly cost and is
-   environment-specific. Reasoning in [`infra/terraform/README.md`](infra/terraform/README.md).
+5. **Terraform provisioning focuses on data-plane primitives.** It provisions S3, RDS, ECR, IAM, and CloudWatch. Compute layers (like ECS or MWAA) are intentionally excluded to keep local testing lightweight and avoid unnecessary cloud compute costs. Detailed reasoning is in [`infra/terraform/README.md`](infra/terraform/README.md).
 
 ---
 
@@ -278,11 +265,7 @@ coverdrive/
 
 ## About
 
-I'm Nadeem Theba. I built the original version of this for my MSc at
-the University of Hertfordshire in 2022. In 2026 I rebuilt it as a data
-platform — and corrected the methodology flaw I'd shipped in the
-dissertation. The story of that flaw, and the fix, is in
-[`docs/adr-pca-leakage.md`](docs/adr-pca-leakage.md).
+I'm Nadeem Theba. I built the original version of this for my MSc at the University of Hertfordshire in 2022. In 2026, I rebuilt it as a scalable data platform to demonstrate modern data engineering practices.
 
 The most useful path through this repo: the ADR, then
 `src/coverdrive/transform.py` + its tests, then `dbt/macros/compute_pca.sql`.

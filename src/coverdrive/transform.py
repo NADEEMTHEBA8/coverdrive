@@ -1,10 +1,5 @@
 """Silver transformations: clean Bronze raw scrapes into a conformed schema.
 
-The original dissertation did all cleaning in a single ad-hoc notebook cell.
-Here it's a typed, testable function per source — each one a pure
-`pd.DataFrame -> pd.DataFrame` mapping. Pure functions are unit-testable
-against the CSV fixtures with no infrastructure dependencies.
-
 Cleaning steps applied (in order):
 1. Drop pandas index artifacts.
 2. Lowercase strings for case-insensitive joining.
@@ -228,7 +223,11 @@ def transform_batting(df: pd.DataFrame) -> pd.DataFrame:
 
     # Quality filters: require player name and at least one run scored.
     # Players with zero recorded runs add no analytic value.
-    out = out.dropna(subset=["player", "runs"])
+    valid_mask = out["player"].notna() & out["runs"].notna()
+    dropped_rows = len(out) - valid_mask.sum()
+    if dropped_rows > 0:
+        log.warning("transform.batting.dropped_nulls", dropped_count=dropped_rows)
+    out = out[valid_mask]
 
     # Natural-key dedup. Multiple ESPN scrapes on the same day can produce
     # duplicates if pagination overlapped — keep the row with most matches.
@@ -290,8 +289,11 @@ def transform_bowling(df: pd.DataFrame) -> pd.DataFrame:
         out["best_bowling_innings"] = df["best_bowling_innings"].astype("string")
 
     # Bowlers with 0 wickets or 0 balls bowled contribute no signal.
-    out = out.dropna(subset=["player", "wickets"])
-    out = out[out["wickets"] > 0]
+    valid_mask = out["player"].notna() & out["wickets"].notna() & (out["wickets"] > 0)
+    dropped_rows = len(out) - valid_mask.sum()
+    if dropped_rows > 0:
+        log.warning("transform.bowling.dropped_invalid", dropped_count=dropped_rows)
+    out = out[valid_mask]
 
     out = (
         out.sort_values("matches", ascending=False, na_position="last")

@@ -20,3 +20,4 @@ select
     best_bowling_innings
 from {{ source('silver', 'bowling') }}
 where wickets > 0
+qualify row_number() over (partition by player order by career_start_year asc nulls last) = 1

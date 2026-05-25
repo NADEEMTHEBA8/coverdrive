@@ -4,9 +4,8 @@
 -- business logic lives in marts. The view layer means changes here propagate
 -- without rematerializing terabytes.
 --
--- transform_batting always emits the full Silver schema (see ADR-001 lesson on
--- stable data contracts), so this view can reference every column directly
--- without coalesce or null-injection hacks.
+-- transform_batting always emits the full Silver schema, so this view can
+-- reference every column directly without coalesce or null-injection hacks.
 
 select
     player,
@@ -29,3 +28,4 @@ select
     cast(high_score_not_out as boolean)   as high_score_not_out
 from {{ source('silver', 'batting') }}
 where runs is not null  -- enforced by Pandera too; defense-in-depth
+qualify row_number() over (partition by player order by career_start_year asc nulls last) = 1

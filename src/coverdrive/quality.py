@@ -1,9 +1,5 @@
 """Data quality gate between Silver and Gold.
 
-Implemented with Pandera (DataFrameModel API) — chosen over Great Expectations
-because Pandera schemas are typed, version-controlled Python, and unit-testable.
-GE's JSON suite format is harder to refactor and harder to type-check.
-
 The contract: this module either returns cleanly (Silver is publishable) or
 raises a `QualityGateFailure`. Airflow's DAG halts on the exception — bad data
 never reaches Gold.

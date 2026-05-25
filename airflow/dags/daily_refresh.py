@@ -1,31 +1,9 @@
-"""Daily refresh DAG: Bronze ingestion → Silver transform → quality gate → dbt build.
-
-Design decisions worth defending:
-
-1. **Each stage is a separate task.** Failures localize to one node in the
-   Airflow UI; partial reruns are trivial (e.g. `airflow tasks run ... dbt_build`
-   after fixing a SQL bug, without re-scraping).
-
-2. **Retries with exponential backoff at the task level.** Transient ESPN 503s
-   recover automatically; persistent failures route to the on_failure_callback.
-
-3. **SLA: end-to-end completion by 06:00 IST.** Defined as 6h from the 00:00 UTC
-   schedule. SLA misses trigger the same Slack callback as failures, but with
-   warning severity rather than critical.
-
-4. **Quality gate is a hard barrier.** dbt_build is downstream of quality_gate
-   with trigger_rule=ALL_SUCCESS. Bad Silver data cannot reach Gold.
-
-5. **dbt run is split from dbt test.** `dbt build` does both interleaved by DAG
-   order, but splitting in Airflow lets us catch model-build failures separately
-   from test failures in alerts.
-"""
+"""Daily refresh DAG: Bronze ingestion → Silver transform → quality gate → dbt build."""
 
 from __future__ import annotations
 
-import json
+import logging
 import os
-import sys
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -39,76 +17,26 @@ from airflow.operators.bash import BashOperator
 
 LOCAL_TZ = pendulum.timezone("UTC")
 DBT_PROJECT_DIR = "/opt/airflow/dbt"
-SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL")
 
+log = logging.getLogger(__name__)
 
 # ─── Failure / SLA callbacks ─────────────────────────────────────────────────
 
 
-def _post_slack(payload: dict[str, Any]) -> None:
-    """Best-effort Slack notification. Never raises — alert failures shouldn't fail DAGs."""
-    if not SLACK_WEBHOOK_URL or "FAKE" in SLACK_WEBHOOK_URL:
-        # Local dev / no webhook configured — log only.
-        print(f"[slack stub] {json.dumps(payload)}", file=sys.stderr)  # noqa: T201
-        return
-    try:
-        requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=5)
-    except requests.RequestException as e:
-        print(f"[slack send failed] {e}", file=sys.stderr)  # noqa: T201
-
-
 def task_failure_callback(context: dict[str, Any]) -> None:
-    """Post structured failure detail to Slack on task failure."""
+    """Log structured failure detail on task failure."""
     ti: TaskInstance = context["task_instance"]
-    _post_slack(
-        {
-            "text": ":rotating_light: Coverdrive DAG failure",
-            "blocks": [
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": (
-                            f"*DAG:* `{ti.dag_id}`\n"
-                            f"*Task:* `{ti.task_id}`\n"
-                            f"*Run:* `{context.get('run_id')}`\n"
-                            f"*Try:* {ti.try_number}/{ti.max_tries}\n"
-                            f"*Exception:* {context.get('exception')}"
-                        ),
-                    },
-                },
-                {
-                    "type": "actions",
-                    "elements": [
-                        {
-                            "type": "button",
-                            "text": {"type": "plain_text", "text": "View logs"},
-                            "url": ti.log_url,
-                        }
-                    ],
-                },
-            ],
-        }
+    log.error(
+        f"Task {ti.task_id} failed in DAG {ti.dag_id}. "
+        f"Run: {context.get('run_id')}, Try: {ti.try_number}/{ti.max_tries}. "
+        f"Exception: {context.get('exception')}"
     )
 
 
 def sla_miss_callback(dag, task_list, blocking_task_list, slas, blocking_tis) -> None:  # type: ignore[no-untyped-def]  # noqa: ANN001
-    """Post SLA-miss warning. Different from failure: tasks ran but late."""
-    sla_lines = "\n".join(f"• `{sla.task_id}`" for sla in slas)
-    _post_slack(
-        {
-            "text": f":warning: Coverdrive SLA miss on `{dag.dag_id}`",
-            "blocks": [
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"*SLA missed for:*\n{sla_lines}",
-                    },
-                }
-            ],
-        }
-    )
+    """Log SLA-miss warning."""
+    sla_lines = ", ".join(f"{sla.task_id}" for sla in slas)
+    log.warning(f"SLA missed on DAG {dag.dag_id} for tasks: {sla_lines}")
 
 
 # ─── DAG definition ──────────────────────────────────────────────────────────
@@ -116,7 +44,7 @@ def sla_miss_callback(dag, task_list, blocking_task_list, slas, blocking_tis) ->
 DEFAULT_ARGS = {
     "owner": "data-platform",
     "depends_on_past": False,
-    "email_on_failure": False,  # We use Slack via callback instead.
+    "email_on_failure": False,
     "retries": 3,
     "retry_delay": timedelta(minutes=5),
     "retry_exponential_backoff": True,

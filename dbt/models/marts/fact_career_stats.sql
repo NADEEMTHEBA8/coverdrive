@@ -2,13 +2,6 @@
 
 -- Career-level fact table. Long format — one row per (player, metric_name) —
 -- lets BI tools pivot freely without re-materializing N wide tables.
---
--- Trade-off vs. a wide fact table:
---   + Schema-stable: new metrics don't add columns
---   + Easier to unit-test per-metric aggregations
---   − Slightly larger storage; SUM/GROUP BY needed for "give me a player's full row"
--- For ~3K players × ~15 metrics = 45K rows. Wide table is technically faster
--- here but the schema-stability argument wins at this scale.
 
 with batting_long as (
     select player, 'matches'         as metric_name, cast(matches as double)         as metric_value from {{ ref('stg_batting') }}
