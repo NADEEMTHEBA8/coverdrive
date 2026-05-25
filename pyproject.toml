@@ -1,7 +1,7 @@
 [project]
 name = "coverdrive"
 version = "0.1.0"
-description = "Production-grade cricket performance data platform — ingestion, lakehouse, dbt warehouse, and serving API."
+description = "Cricket performance data platform — ingestion, lakehouse, dbt warehouse, and serving API."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Nadeem Theba" }]
@@ -17,7 +17,6 @@ dependencies = [
     "pandas>=2.2",
     "pyarrow>=15.0",
     "boto3>=1.34",
-    "s3fs>=2024.2",
     "duckdb>=0.10",
     # Quality + types
     "pandera[pandas]>=0.18",
@@ -25,7 +24,6 @@ dependencies = [
     "pydantic-settings>=2.2",
     # Observability
     "structlog>=24.1",
-    "prometheus-client>=0.20",
     # Serving
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",

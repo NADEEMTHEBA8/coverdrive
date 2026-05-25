@@ -1,4 +1,4 @@
-# Coverdrive — production-grade cricket data platform
+# Coverdrive — cricket analytics lakehouse
 # Run `make help` to see what's available.
 
 SHELL := /bin/bash
@@ -49,12 +49,12 @@ clean:  ## Remove venv, caches, build artifacts
 	rm -rf $(DBT_DIR)/target $(DBT_DIR)/logs $(DBT_DIR)/dbt_packages
 
 # ─── Local infra ──────────────────────────────────────────────────────
-up:  ## Start MinIO, Postgres, Airflow via docker-compose
-	docker compose up -d
+up:  ## Start MinIO, Postgres, Airflow, API via docker-compose
+	docker compose up -d --build
 	@echo ""
 	@echo "MinIO console:   http://localhost:9101  (minioadmin / minioadmin)"
 	@echo "Airflow UI:      http://localhost:8180  (admin / admin)"
-	@echo "API (once up):   http://localhost:8000/docs"
+	@echo "API:             http://localhost:8000/docs  (degraded until make dbt-build)"
 
 down:  ## Stop all containers
 	docker compose down
@@ -88,10 +88,20 @@ dbt-docs:  ## Generate and serve dbt docs (lineage graph)
 api:  ## Start the FastAPI service locally
 	$(PY) -m coverdrive.api
 
-demo: seed transform quality dbt-build  ## End-to-end demo on fixture data
+demo:  ## End-to-end demo: start services, seed fixtures, run full pipeline
+	$(MAKE) up
+	@echo "Waiting for MinIO..."
+	@until curl -sf http://localhost:9100/minio/health/live >/dev/null 2>&1; do sleep 2; done
+	$(MAKE) seed
+	$(MAKE) transform
+	$(MAKE) quality
+	$(MAKE) dbt-build
 	@echo ""
-	@echo "✔ Demo complete. Warehouse populated at data/warehouse.duckdb"
-	@echo "  Run 'make api' then visit http://localhost:8000/docs"
+	@echo "✔ Demo complete."
+	@echo "  Warehouse:   data/warehouse.duckdb"
+	@echo "  API docs:    http://localhost:8000/docs"
+	@echo "  MinIO:       http://localhost:9101  (minioadmin / minioadmin)"
+	@echo "  Airflow:     http://localhost:8180  (admin / admin)"
 
 # ─── Quality gates ────────────────────────────────────────────────────
 lint:  ## ruff lint + format check

@@ -1,5 +1,10 @@
 # Local development stack for Coverdrive.
-# Production deployment uses the Terraform module in infra/terraform/.
+# Brings up MinIO (object storage), Postgres (Airflow metadata), Airflow,
+# and the FastAPI serving layer.
+#
+# After `make up`, run the pipeline stages on the host:
+#   make seed && make transform && make quality && make dbt-build
+# Or just: make demo
 
 services:
   # ─── Object storage (S3-compatible) ─────────────────────────────────
@@ -32,7 +37,6 @@ services:
       /bin/sh -c "
       mc alias set local http://minio:9000 minioadmin minioadmin;
       mc mb --ignore-existing local/coverdrive;
-      mc mb --ignore-existing local/coverdrive-warehouse;
       mc anonymous set download local/coverdrive;
       echo 'Buckets ready.';
       "
@@ -54,7 +58,6 @@ services:
       retries: 5
 
   # ─── Airflow (standalone: webserver + scheduler in one process) ─────
-  # Production: use the official Helm chart on K8s. This setup is for local dev.
   airflow:
     image: apache/airflow:2.9.1-python3.11
     container_name: coverdrive-airflow
@@ -70,7 +73,6 @@ services:
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
       AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
-      # Coverdrive-specific config passed through to tasks
       COVERDRIVE_S3_ENDPOINT: http://minio:9000
       COVERDRIVE_S3_ACCESS_KEY: minioadmin
       COVERDRIVE_S3_SECRET_KEY: minioadmin
@@ -96,6 +98,34 @@ services:
         airflow users create --role Admin --username admin --password admin --email admin@coverdrive.local --firstname admin --lastname admin || true
         airflow scheduler &
         exec airflow webserver
+
+  # ─── FastAPI serving layer ───────────────────────────────────────────
+  # Reads from data/warehouse.duckdb (bind-mounted from the host).
+  # Starts degraded until `make dbt-build` populates the warehouse.
+  api:
+    build: .
+    container_name: coverdrive-api
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      COVERDRIVE_ENV: local
+      COVERDRIVE_S3_ENDPOINT: http://minio:9000
+      COVERDRIVE_S3_ACCESS_KEY: minioadmin
+      COVERDRIVE_S3_SECRET_KEY: minioadmin
+      COVERDRIVE_S3_BUCKET: coverdrive
+      COVERDRIVE_WAREHOUSE_PATH: /data/warehouse.duckdb
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
 volumes:
   minio-data:
   postgres-data:

@@ -13,10 +13,9 @@ Coverdrive is a small, self-contained **data platform** that turns
 ESPNcricinfo's career statistics into a queryable warehouse and a thin
 HTTP serving layer.
 
-It exists to demonstrate, end-to-end and in production-grade code, the
-shape of a modern batch data pipeline: source ingestion, a medallion
-lakehouse, in-warehouse transformation with dbt, a quality gate, an
-orchestrator, infrastructure-as-code, and an API.
+It demonstrates end-to-end the shape of a batch data pipeline: source
+ingestion, a medallion lakehouse, in-warehouse transformation with dbt,
+a quality gate, an orchestrator, infrastructure-as-code, and an API.
 
 **Non-goals.** This is not a real cricket analytics product, not a
 streaming system, not an ML platform, and not a multi-tenant service.

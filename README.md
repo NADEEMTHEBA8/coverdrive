@@ -1,7 +1,6 @@
 # Coverdrive
 
-> A production-grade data platform built on a flawed MSc dissertation.
-> The README is honest about both halves.
+> A local analytical lakehouse for cricket career statistics — and the corrective successor to a flawed MSc dissertation.
 
 [![CI](https://github.com/nadeem/coverdrive/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
@@ -16,10 +15,9 @@
 
 Coverdrive ingests ~5,000 cricketers' career statistics from
 ESPNcricinfo, lands them in a partitioned Parquet lakehouse, transforms
-them in DuckDB with dbt, quality-gates the result with Pandera, serves
-the marts via FastAPI, and orchestrates the whole thing with Airflow.
-The entire stack — MinIO, Airflow, the warehouse, the API — runs
-locally with **one command**:
+them in DuckDB with dbt, quality-gates the result with Pandera, and serves
+the marts via FastAPI. The entire stack — MinIO, Airflow, the warehouse,
+the API — runs locally with **one command**:
 
 ```bash
 make demo
@@ -28,13 +26,12 @@ make demo
 It is also the **successor and corrective** to my 2022 MSc dissertation,
 *"Predicting Greatest Cricketer by Comparing Different Machine Learning
 Approaches."* That project reported 99% accuracy and was wrong. The
-postmortem on what was wrong, and what now lives in this repo instead,
-is in [`docs/adr-pca-leakage.md`](docs/adr-pca-leakage.md). If you read
-nothing else in this repo, read that.
+postmortem is in [`docs/adr-pca-leakage.md`](docs/adr-pca-leakage.md).
+If you read nothing else in this repo, read that.
 
 ---
 
-## Architecture at a glance
+## Architecture
 
 ```
 ESPNcricinfo
@@ -72,8 +69,7 @@ ESPNcricinfo
    Infrastructure-as-code: Terraform module for AWS (S3 · RDS · ECR · IAM · CloudWatch)
 ```
 
-Full diagram and component contracts in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Full diagram and component contracts in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
@@ -95,18 +91,18 @@ cp .env.example .env
 make demo
 ```
 
-`make demo` brings up MinIO + Airflow, seeds Bronze from the test
-fixtures (no live scrape), runs the transform, the quality gate, and the
-dbt build, then starts the FastAPI server.
+`make demo` starts MinIO, Airflow, and the API via docker-compose, seeds
+Bronze from the bundled fixtures (no live scrape), runs transform, the
+quality gate, and dbt build.
 
-When it finishes you'll have:
+When it finishes:
 
-| What | Where |
-|---|---|
-| Airflow UI | http://localhost:8080 (admin / admin) |
-| MinIO console | http://localhost:9001 (minioadmin / minioadmin) |
-| FastAPI docs | http://localhost:8000/docs |
-| Warehouse | `data/warehouse.duckdb` (queryable with `duckdb` CLI) |
+| Service | URL | Credentials |
+|---|---|---|
+| API docs | http://localhost:8000/docs | — |
+| MinIO console | http://localhost:9101 | minioadmin / minioadmin |
+| Airflow UI | http://localhost:8180 | admin / admin |
+| Warehouse | `data/warehouse.duckdb` | queryable with `duckdb` CLI |
 
 ### Try the API
 
@@ -129,7 +125,6 @@ make ingest      # scrapes ESPNcricinfo with retries + backoff
 make transform   # Bronze → Silver
 make quality     # Pandera gate
 make dbt-build   # warehouse
-make api         # serve
 ```
 
 ---
@@ -141,54 +136,72 @@ make api         # serve
 | **Ingestion** with retries, backoff, and fixtures mode | `src/coverdrive/ingestion.py` |
 | **Pure-function transforms** (testable from CSV alone) | `src/coverdrive/transform.py` |
 | **Pandera schema gates** (halts on schema/range/null violations) | `src/coverdrive/quality.py` |
-| **Medallion lakehouse** (Bronze/Silver/Gold) with Hive partitioning | `conf/pipeline.yaml`, `src/coverdrive/utils.py::build_partition_path` |
+| **Medallion lakehouse** (Bronze/Silver/Gold) with Hive partitioning | `conf/pipeline.yaml`, `src/coverdrive/utils.py` |
 | **dbt project** with sources, staging, marts, tests, and a PCA macro | `dbt/` |
 | **FastAPI serving layer** with `/healthz`, `/readyz`, request-logging middleware | `src/coverdrive/api.py` |
 | **Airflow DAG** with retries, SLA, timeout, and Slack failure callback | `airflow/dags/daily_refresh.py` |
-| **Terraform AWS module** — VPC, S3, RDS, ECR, IAM (least-priv), CloudWatch | `infra/terraform/` |
+| **Terraform AWS module** — VPC, S3, RDS, ECR, IAM, CloudWatch | `infra/terraform/` |
 | **CI** — ruff format + lint, mypy, pytest with coverage, dbt parse | `.github/workflows/ci.yml` |
-| **80%+ test coverage** — pytest + moto for S3 + on-disk fixtures | `tests/` |
 | **Architecture Decision Record** for the PCA target-leakage fix | `docs/adr-pca-leakage.md` |
 
 ---
 
-## Engineering decisions worth highlighting
-
-A few choices I'd want a reviewer to ask about:
+## Engineering decisions
 
 1. **The pipeline halts on schema violation; it does not retry.**
-   `quality_gate` has `retries=0`. A bad-data failure is not a flake.
-   It is a signal that the source changed, and re-running won't fix it.
+   `quality_gate` has `retries=0`. A bad-data failure is a signal that
+   the source changed — re-running won't fix it.
 
 2. **The transforms are pure functions.** `src/coverdrive/transform.py`
    takes a DataFrame and returns a DataFrame — no I/O, no S3 client, no
-   filesystem. The tests in `tests/test_transform.py` exercise them
-   directly from CSV fixtures, with no infrastructure. The boundary
-   between "code that decides what data should look like" and "code that
-   moves bytes around" is the single most useful seam in this pipeline.
+   filesystem. Tests in `tests/test_transform.py` run directly against
+   CSV fixtures with no infrastructure.
 
 3. **PCA is computed in dbt as a metric, not learned by a model.**
    The 2022 dissertation trained XGBoost to predict a PCA score derived
    from its own input features — target leakage. The fix is structural:
    PCA now lives in `dbt/macros/compute_pca.sql` as a deterministic
-   linear combination, applied at warehouse build time. The model layer
-   is gone. The reasoning is documented in full in
-   [`adr-pca-leakage.md`](docs/adr-pca-leakage.md).
+   linear combination. Reasoning in [`adr-pca-leakage.md`](docs/adr-pca-leakage.md).
 
-4. **DuckDB over a real warehouse, deliberately.** dbt-duckdb has the
-   same SQL surface as Snowflake/BigQuery/Postgres for what this project
-   needs, costs nothing, and reads Parquet on S3 natively. The same dbt
-   project compiles against a managed warehouse with a profile change.
-   Choosing DuckDB here is choosing to spend the complexity budget on
-   the data model, not the infrastructure.
+4. **DuckDB over a managed warehouse, deliberately.** dbt-duckdb has the
+   same SQL surface as Snowflake/BigQuery for what this project needs,
+   costs nothing, and reads Parquet on S3 natively. The same dbt project
+   compiles against a managed warehouse with a profile change.
 
 5. **The Terraform stops at the data-plane primitives.** It provisions
-   S3, RDS, ECR, IAM, and CloudWatch — and stops. The ECS task
-   definition is intentionally out of scope, because *which* compute
-   layer (ECS Fargate / MWAA / EC2 / k8s) is environment-specific and
-   encoding one of them into the same module conflates data plane with
-   orchestration plane. The reasoning is in
-   [`infra/terraform/README.md`](infra/terraform/README.md).
+   S3, RDS, ECR, IAM, and CloudWatch — and stops. No ECS service or MWAA
+   cluster, because standing up compute has a real monthly cost and is
+   environment-specific. Reasoning in [`infra/terraform/README.md`](infra/terraform/README.md).
+
+---
+
+## Running locally
+
+```bash
+make up          # MinIO, Postgres, Airflow, API via docker-compose
+make seed        # load fixture CSVs into Bronze (or make ingest for live scrape)
+make transform   # Bronze → Silver
+make quality     # Pandera gate
+make dbt-build   # build warehouse models
+```
+
+Or as one command: `make demo`
+
+The API starts degraded until `make dbt-build` populates the warehouse.
+`/healthz` (liveness) returns `ok` immediately; `/readyz` (readiness)
+returns `ok` once the marts are populated.
+
+### AWS data-plane (optional)
+
+The Terraform module in `infra/terraform/` provisions S3, RDS, ECR, IAM,
+and CloudWatch — the data-plane primitives a compute layer would consume.
+No ECS service or MWAA is provisioned.
+
+```bash
+cd infra/terraform
+terraform init
+terraform plan -var="environment=dev"
+```
 
 ---
 
@@ -199,7 +212,7 @@ A few choices I'd want a reviewer to ask about:
 | Language | Python 3.11 |
 | HTTP + parsing | `requests`, `beautifulsoup4`, `lxml`, `tenacity` |
 | DataFrames | `pandas`, `pyarrow` |
-| Storage | S3 / MinIO via `boto3` + `s3fs`, Parquet (Snappy) |
+| Storage | S3 / MinIO via `boto3`, Parquet (Snappy) |
 | Config | `pydantic`, `pydantic-settings`, YAML |
 | Logging | `structlog` (JSON in prod, key-value in dev) |
 | Quality | `pandera` |
@@ -220,103 +233,46 @@ A few choices I'd want a reviewer to ask about:
 ```bash
 make lint        # ruff format --check + ruff check
 make typecheck   # mypy in strict mode
-make test        # pytest with coverage (fails under 80%)
+make test        # pytest with coverage
 make ci          # all three + dbt parse
-```
-
-CI runs the same gates on every push and pull request. See
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml). Coverage XML is
-uploaded as an artifact.
-
----
-
-## Deployment
-
-The project is built to run identically locally and on AWS. The local stack
-(docker-compose: MinIO, Postgres, Airflow) mirrors the production topology
-so the application code paths don't change between environments.
-
-### Local (default)
-
-```bash
-make up         # MinIO, Postgres, Airflow via docker-compose
-make seed       # fixtures into Bronze
-make transform  # Bronze -> Silver
-make quality    # Pandera gate
-make dbt-build  # warehouse models
-make api        # FastAPI on :8000
-```
-
-### AWS (production topology)
-
-Infrastructure-as-code in `infra/terraform/` provisions the data plane:
-
-| Component          | AWS service                       | Local equivalent       |
-|--------------------|-----------------------------------|------------------------|
-| Lake storage       | S3 (`coverdrive-lake-*`)          | MinIO                  |
-| Metadata DB        | RDS Postgres (`db.t4g.micro`)     | Postgres container     |
-| Container registry | ECR (`coverdrive`)                | n/a (local images)     |
-| Logs               | CloudWatch log groups             | docker logs            |
-| Secrets            | IAM with least-privilege policies | `.env` file            |
-| Network            | VPC with public + private subnets | docker network         |
-
-The compute layer (Airflow scheduler/worker on ECS Fargate, FastAPI behind
-an ALB) is documented in `docs/ARCHITECTURE.md` but not yet codified —
-intentional, since standing up compute is the part with a real monthly cost.
-The data plane Terraform is the engineering artifact that matters for review.
-
-To plan against AWS (dry run, no apply):
-
-```bash
-cd infra/terraform
-terraform init
-terraform plan -var="environment=dev"
-```
-
-The module validates clean against the official AWS provider
-(`terraform validate` passes).
-
-## Repository map
-
-```
-coverdrive/
-├── README.md                          ← you are here
-├── Makefile                           one-command lifecycle
-├── docker-compose.yml                 MinIO + Postgres + Airflow
-├── pyproject.toml                     strict ruff/mypy config
-├── conf/pipeline.yaml                 every parameter, Pydantic-validated
-├── src/coverdrive/                     ingestion, transform, quality, api
-├── dbt/                               sources, staging, marts, PCA macro
-├── airflow/dags/daily_refresh.py      orchestration
-├── tests/                             pytest + moto + on-disk fixtures
-├── infra/terraform/                   AWS module
-├── docs/
-│   ├── ARCHITECTURE.md                system design
-│   └── adr-pca-leakage.md             the postmortem
-└── .github/workflows/ci.yml
 ```
 
 ---
 
 ## Limitations
 
-In the spirit of being more useful than impressive, what this project
-does **not** do:
+- **Batch, not streaming.** The source is a daily-refresh stat table.
+- **Single-source.** Only ESPNcricinfo. The right second source is
+  CricSheet for ball-by-ball data.
+- **ODI-only.** Test and T20I are a parameterised next step.
+- **Read-only API.** No write path.
+- **PCA loadings are fixed at 2022 values.** Annual recomputation gated
+  by human review. Rationale in [`adr-pca-leakage.md`](docs/adr-pca-leakage.md).
+- **Terraform applies cleanly but stops at the data-plane primitives.**
+  The local docker-compose stack is the running system.
 
-- It is **batch, not streaming.** The source is a daily-refresh stat
-  table — there is nothing to stream.
-- It is **single-source.** Only ESPNcricinfo. The right second source is
-  CricSheet for ball-by-ball data; see "Future work" in `ARCHITECTURE.md`.
-- It is **ODI-only.** Test and T20I are a parameterised next step.
-- It is **read-only.** No write path on the API.
-- The PCA loadings are **fixed at 2022 values.** Refresh policy is an
-  annual recomputation gated by human review, not an automated step.
-  Rationale in [`adr-pca-leakage.md`](docs/adr-pca-leakage.md) §
-  "Risks accepted."
-- The **AWS Terraform applies cleanly but stops at the data-plane
-  primitives.** No ECS service is provisioned. The local
-  `docker-compose.yml` is the running stack; the Terraform is the
-  production-target shape. Reasoning in `infra/terraform/README.md`.
+---
+
+## Repository map
+
+```
+coverdrive/
+├── README.md
+├── Makefile                           one-command lifecycle
+├── Dockerfile                         API container
+├── docker-compose.yml                 MinIO + Postgres + Airflow + API
+├── pyproject.toml                     strict ruff/mypy config
+├── conf/pipeline.yaml                 every parameter, Pydantic-validated
+├── src/coverdrive/                    ingestion, transform, quality, api
+├── dbt/                               sources, staging, marts, PCA macro
+├── airflow/dags/daily_refresh.py      orchestration
+├── tests/                             pytest + moto + on-disk fixtures
+├── infra/terraform/                   AWS data-plane module
+├── docs/
+│   ├── ARCHITECTURE.md                system design
+│   └── adr-pca-leakage.md             the postmortem
+└── .github/workflows/ci.yml
+```
 
 ---
 
@@ -328,11 +284,8 @@ platform — and corrected the methodology flaw I'd shipped in the
 dissertation. The story of that flaw, and the fix, is in
 [`docs/adr-pca-leakage.md`](docs/adr-pca-leakage.md).
 
-If you're a hiring manager: the most useful 10 minutes you can spend in
-this repo are the ADR, then `src/coverdrive/transform.py` + its tests,
-then `dbt/macros/compute_pca.sql`. That path tells you how I think about
-correctness, separation of concerns, and analytics engineering in roughly
-that order.
+The most useful path through this repo: the ADR, then
+`src/coverdrive/transform.py` + its tests, then `dbt/macros/compute_pca.sql`.
 
 - LinkedIn: [linkedin.com/in/nadeem-theba](linkedin.com/in/nadeem-theba-602862208)
 - Email: nadeemtheba8@gmail.com
