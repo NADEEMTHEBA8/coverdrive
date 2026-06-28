@@ -142,23 +142,29 @@ def write_bronze(
 
     table_pa = pa.Table.from_pandas(df)
 
-    with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
+    tmp_path = ""
+    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
         with pq.ParquetWriter(
-            tmp.name, table_pa.schema, compression=cfg.storage.compression
+            tmp_path, table_pa.schema, compression=cfg.storage.compression
         ) as writer:
             # Chunking simulates processing large data volumes
             for batch in table_pa.to_batches(max_chunksize=10000):
                 writer.write_batch(batch)
 
-        tmp.seek(0)
+        file_size = Path(tmp_path).stat().st_size
         s3 = get_s3_client()
-        s3.upload_fileobj(
-            Fileobj=tmp,
-            Bucket=settings.coverdrive_s3_bucket,
-            Key=key,
-            ExtraArgs={"ContentType": "application/octet-stream"},
-        )
-        file_size = Path(tmp.name).stat().st_size
+        with open(tmp_path, "rb") as f:
+            s3.upload_fileobj(
+                Fileobj=f,
+                Bucket=settings.coverdrive_s3_bucket,
+                Key=key,
+                ExtraArgs={"ContentType": "application/octet-stream"},
+            )
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
 
     uri = f"s3://{settings.coverdrive_s3_bucket}/{key}"
     write_log.info("bronze.written", uri=uri, bytes=file_size)
