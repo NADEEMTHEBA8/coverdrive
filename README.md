@@ -90,12 +90,17 @@ make demo
 
 When the command finishes:
 
-| Service | URL | Credentials |
-|---|---|---|
-| API docs (Swagger UI) | http://localhost:8000/docs | — |
-| MinIO object console | http://localhost:9101 | `minioadmin` / `minioadmin` |
-| Airflow UI | http://localhost:8180 | `admin` / `admin` |
-| DuckDB warehouse | `data/warehouse.duckdb` | queryable with `duckdb` CLI |
+**API docs (Swagger UI)** — `http://localhost:8000/docs`
+![API docs (Swagger UI)](docs/assets/service_swagger.png)
+
+**MinIO object console** — `http://localhost:9101` (Credentials: `minioadmin` / `minioadmin`)
+![MinIO object console](docs/assets/service_minio.png)
+
+**Airflow UI** — `http://localhost:8180` (Credentials: `admin` / `admin`)
+![Airflow UI](docs/assets/service_airflow.png)
+
+**DuckDB warehouse** — `data/warehouse.duckdb` (Queryable with `duckdb` CLI)
+![DuckDB CLI](docs/assets/service_duckdb.png)
 
 ### Try the API
 
