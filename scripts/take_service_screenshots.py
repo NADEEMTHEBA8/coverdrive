@@ -9,9 +9,7 @@ Usage:
 from __future__ import annotations
 
 import subprocess
-import sys
 import tempfile
-import time
 from pathlib import Path
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
@@ -27,8 +25,9 @@ CHROME_BIN = (
 )
 
 AIRFLOW_URL = "http://localhost:8180"
-MINIO_URL   = "http://localhost:9101"
-API_URL     = "http://localhost:8000"
+MINIO_URL = "http://localhost:9101"
+API_URL = "http://localhost:8000"
+
 
 def html_to_png(html: str, out: Path, width: int = 1200, height: int = 800) -> None:
     with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w") as f:
@@ -53,6 +52,7 @@ def html_to_png(html: str, out: Path, width: int = 1200, height: int = 800) -> N
     finally:
         tmp.unlink(missing_ok=True)
 
+
 def shot_swagger() -> None:
     from playwright.sync_api import sync_playwright
 
@@ -73,6 +73,7 @@ def shot_swagger() -> None:
 
     size = out.stat().st_size if out.exists() else 0
     print(f"     saved {out.name} ({size:,} bytes)")
+
 
 def shot_minio() -> None:
     from playwright.sync_api import sync_playwright
@@ -109,6 +110,7 @@ def shot_minio() -> None:
     size = out.stat().st_size if out.exists() else 0
     print(f"     saved {out.name} ({size:,} bytes)")
 
+
 def shot_airflow() -> None:
     from playwright.sync_api import sync_playwright
 
@@ -134,12 +136,13 @@ def shot_airflow() -> None:
     size = out.stat().st_size if out.exists() else 0
     print(f"     saved {out.name} ({size:,} bytes)")
 
+
 def shot_duckdb() -> None:
     out = ASSETS / "service_duckdb.png"
     print("4/4 DuckDB CLI …")
 
-    duckdb_bin = "duckdb" # assume it's in PATH or installable via uv/pip but actually duckdb is built-in python for this project, let's use python duckdb module to mimic CLI
-    
+    duckdb_bin = "duckdb"  # assume it's in PATH or installable via uv/pip but actually duckdb is built-in python for this project, let's use python duckdb module to mimic CLI
+
     # We will simulate a CLI query visually using html_to_png
     # The warehouse is at data/warehouse.duckdb
     script = (
@@ -150,14 +153,16 @@ def shot_duckdb() -> None:
     )
     result = subprocess.run(
         [str(PROJECT_ROOT / ".venv" / "bin" / "python"), "-c", script],
-        capture_output=True, text=True,
-        cwd=str(PROJECT_ROOT), timeout=30,
+        capture_output=True,
+        text=True,
+        cwd=str(PROJECT_ROOT),
+        timeout=30,
     )
-    
+
     tables_list = [r.strip() for r in result.stdout.strip().splitlines() if r.strip()]
     if not tables_list:
         tables_list = ["No tables found"]
-        
+
     tables_output = ""
     for tbl in tables_list:
         tables_output += f"│ {tbl.ljust(30)} │\n"
@@ -198,6 +203,7 @@ body{{background:#0d1117;font-family:'Menlo','Monaco',monospace;font-size:14px;p
     html_to_png(html, out, width=650, height=450)
     size = out.stat().st_size if out.exists() else 0
     print(f"     saved {out.name} ({size:,} bytes)")
+
 
 if __name__ == "__main__":
     print(f"Output: {ASSETS}\n")
