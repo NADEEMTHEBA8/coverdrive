@@ -263,12 +263,12 @@ def shot_api() -> None:
     for item in data:
         rows_html += f"""
         <tr>
-          <td class="num">{item.get('rank','')}</td>
-          <td class="name">{item.get('player','')}</td>
-          <td class="str">{item.get('country_tag','')}</td>
-          <td class="num">{float(item.get('pca_score',0)):.2f}</td>
-          <td class="num">{int(item.get('matches',0))}</td>
-          <td class="num">{int(item.get('primary_metric',0))}</td>
+          <td class="num">{item.get("rank", "")}</td>
+          <td class="name">{item.get("player", "")}</td>
+          <td class="str">{item.get("country_tag", "")}</td>
+          <td class="num">{float(item.get("pca_score", 0)):.2f}</td>
+          <td class="num">{int(item.get("matches", 0))}</td>
+          <td class="num">{int(item.get("primary_metric", 0))}</td>
         </tr>"""
 
     html = f"""<!DOCTYPE html>
