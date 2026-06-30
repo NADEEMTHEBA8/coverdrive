@@ -29,6 +29,18 @@ ODI career statistics for ~5,000 players exist on ESPNcricinfo in paginated HTML
 
 ---
 
+## System Architecture
+
+```mermaid
+flowchart LR
+  A[ESPNcricinfo] -->|Python Scraper| B(MinIO: Bronze)
+  B -->|Pandera| C(MinIO: Silver)
+  C -->|dbt| D[(DuckDB: Gold)]
+  D -->|FastAPI| E[Rankings API]
+```
+
+---
+
 ## Technology Stack and Architectural Decisions
 
 ### Stack
@@ -65,6 +77,8 @@ ODI career statistics for ~5,000 players exist on ESPNcricinfo in paginated HTML
 **Hive-partitioned Parquet over a mutable database in the lakehouse.** Writing Bronze as `bronze/{table}/ingestion_date=YYYY-MM-DD/data.parquet` makes every day's raw scrape addressable and idempotent. Re-running ingestion on the same date overwrites exactly one partition; historical data is untouched. DuckDB's `read_parquet('s3://.../**/*.parquet', hive_partitioning=true)` exposes the partition key as a filter column with no additional code.
 
 **Terraform stops at data-plane primitives.** The `infra/terraform/` module provisions S3, RDS, ECR, IAM, and CloudWatch — the things a compute layer consumes. It does not provision ECS or MWAA. This keeps local testing self-contained: the docker-compose stack is the working system, and the Terraform module is the production data-plane contract, not an environment that has to be kept in sync.
+
+**dbt Materialization Strategy.** dbt models are currently materialized as full tables due to the small data volume (~5,000 players). However, the Hive-partitioned Bronze layer natively supports `incremental` dbt models in the future as historical data volume grows.
 
 ---
 
@@ -156,7 +170,7 @@ terraform plan -var="environment=dev"
 terraform apply -var="environment=dev"
 ```
 
-This provisions S3, RDS, ECR, IAM, and CloudWatch. It does not provision ECS or MWAA.
+This provisions S3, RDS, ECR, IAM, and CloudWatch. It does not provision ECS or MWAA. To take this to production, the FastAPI app would be deployed to AWS ECS (AWS Fargate), and orchestration would shift from local docker-compose to Amazon MWAA (Managed Workflows for Apache Airflow).
 
 ---
 
