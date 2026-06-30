@@ -147,7 +147,7 @@ def write_bronze(
         tmp_path = tmp.name
 
     try:
-        with pq.ParquetWriter(
+        with pq.ParquetWriter(  # type: ignore[no-untyped-call]
             tmp_path, table_pa.schema, compression=cfg.storage.compression
         ) as writer:
             # Chunking simulates processing large data volumes
