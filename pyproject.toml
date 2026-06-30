@@ -87,6 +87,7 @@ ignore = ["S101", "N806"]  # self/cls type hints, asserts in tests
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "S"]
 "airflow/**" = ["ANN201"]   # Airflow tasks return None implicitly
+"scripts/**" = ["T20", "E501", "S", "ANN", "F841", "RUF", "E741"]  # Scripts are allowed to print and have long lines
 
 # ─── mypy: strict ─────────────────────────────────────────────────────
 [tool.mypy]
