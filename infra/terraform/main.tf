@@ -52,7 +52,6 @@ data "aws_availability_zones" "available" {
 
 data "aws_caller_identity" "current" {}
 
-# Unique suffix so the S3 bucket name doesn't collide globally.
 resource "random_id" "bucket_suffix" {
   byte_length = 4
 }
@@ -168,11 +167,11 @@ resource "aws_security_group" "rds" {
   }
 
   egress {
-    description = "All outbound"
+    description = "Intra-VPC only — RDS has no legitimate reason to reach the internet"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.vpc_cidr]
   }
 
   tags = {
@@ -181,11 +180,32 @@ resource "aws_security_group" "rds" {
 }
 
 # ═════════════════════════════════════════════════════════════════════
+# KMS — Customer-managed key shared across S3, ECR, CloudWatch, and
+# Athena. A single CMK simplifies key-rotation policy and CloudTrail
+# audit trail without the overhead of per-service keys at this scale.
+# ═════════════════════════════════════════════════════════════════════
+
+resource "aws_kms_key" "lake" {
+  description             = "CMK for Coverdrive lakehouse: S3, ECR, CloudWatch, Athena"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+
+  tags = {
+    Name = "${local.name_prefix}-lake-cmk"
+  }
+}
+
+resource "aws_kms_alias" "lake" {
+  name          = "alias/${local.name_prefix}-lake"
+  target_key_id = aws_kms_key.lake.key_id
+}
+
+# ═════════════════════════════════════════════════════════════════════
 # S3 — lakehouse bucket (Bronze + Silver) and access-log bucket.
 #
 # Hardening:
 #   - Versioning on (recover from bad pipeline writes).
-#   - SSE-S3 at-rest encryption.
+#   - KMS-CMK at-rest encryption (customer-managed key, CloudTrail-audited).
 #   - All public access blocked.
 #   - Lifecycle: Bronze raw moves to IA at 30d, Glacier at 180d.
 #   - Server access logs to a separate bucket.
@@ -213,7 +233,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "lake" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.lake.arn
     }
     bucket_key_enabled = true
   }
@@ -286,7 +307,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.lake.arn
     }
   }
 }
@@ -341,7 +363,7 @@ resource "aws_db_instance" "airflow_metadata" {
   storage_encrypted      = true
   db_name                = "airflow"
   username               = var.db_username
-  password               = var.db_password
+  manage_master_user_password = true  # RDS owns rotation via Secrets Manager; password never in state.
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
   multi_az               = var.environment == "prod"
@@ -354,9 +376,30 @@ resource "aws_db_instance" "airflow_metadata" {
   # Performance Insights — useful for slow-query investigation in interviews.
   performance_insights_enabled          = true
   performance_insights_retention_period = 7
+  parameter_group_name                  = aws_db_parameter_group.airflow.name
+  enabled_cloudwatch_logs_exports       = ["postgresql", "upgrade"]
 
   tags = {
     Name = "${local.name_prefix}-airflow-meta"
+  }
+}
+
+resource "aws_db_parameter_group" "airflow" {
+  name   = "${local.name_prefix}-postgres16"
+  family = "postgres16"
+
+  parameter {
+    name  = "log_min_duration_statement"
+    value = "1000"  # Log queries taking over 1 s — useful for slow-query investigations.
+  }
+
+  parameter {
+    name  = "pg_stat_statements.track"
+    value = "all"
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-postgres16-params"
   }
 }
 
@@ -373,7 +416,8 @@ resource "aws_ecr_repository" "pipeline" {
   }
 
   encryption_configuration {
-    encryption_type = "AES256"
+    encryption_type = "KMS"
+    kms_key         = aws_kms_key.lake.arn
   }
 }
 
@@ -412,6 +456,11 @@ data "aws_iam_policy_document" "ecs_assume_role" {
     principals {
       type        = "Service"
       identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"]
     }
   }
 }
@@ -485,8 +534,169 @@ resource "aws_iam_role_policy" "pipeline_logs" {
 resource "aws_cloudwatch_log_group" "pipeline" {
   name              = "/aws/coverdrive/${var.environment}/pipeline"
   retention_in_days = var.environment == "prod" ? 30 : 7
+  kms_key_id        = aws_kms_key.lake.arn
 
   tags = {
     Name = "${local.name_prefix}-pipeline-logs"
   }
 }
+
+# ─── RDS CloudWatch Alarms ───────────────────────────────────────────────────
+
+resource "aws_sns_topic" "alerts" {
+  name              = "${local.name_prefix}-alerts"
+  kms_master_key_id = aws_kms_key.lake.arn
+}
+
+# Subscription endpoint is injected at deploy time via the ALERT_EMAIL variable.
+# For local dev this can be left empty; the alarms fire but deliver nowhere.
+resource "aws_sns_topic_subscription" "alerts_email" {
+  count     = var.alert_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_cpu" {
+  alarm_name          = "${local.name_prefix}-rds-cpu"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/RDS"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "RDS CPU over 80% for 10 minutes"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    DBInstanceIdentifier = aws_db_instance.airflow_metadata.identifier
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_storage" {
+  alarm_name          = "${local.name_prefix}-rds-storage"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "FreeStorageSpace"
+  namespace           = "AWS/RDS"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 5368709120  # 5 GB in bytes — alert before autoscaling kicks in (threshold equals one RDS autoscale increment)
+  alarm_description   = "RDS free storage below 5 GB"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    DBInstanceIdentifier = aws_db_instance.airflow_metadata.identifier
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_connections" {
+  alarm_name          = "${local.name_prefix}-rds-connections"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "DatabaseConnections"
+  namespace           = "AWS/RDS"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "RDS connection count over 80 — possible connection leak"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    DBInstanceIdentifier = aws_db_instance.airflow_metadata.identifier
+  }
+}
+
+# ═════════════════════════════════════════════════════════════════════
+# Glue Data Catalog & Athena
+# ═════════════════════════════════════════════════════════════════════
+
+resource "aws_glue_catalog_database" "coverdrive" {
+  name        = "coverdrive_${var.environment}"
+  description = "Coverdrive lakehouse catalog"
+}
+
+resource "aws_athena_workgroup" "coverdrive" {
+  name = "coverdrive_${var.environment}"
+
+  configuration {
+    enforce_workgroup_configuration    = true
+    publish_cloudwatch_metrics_enabled = true
+
+    result_configuration {
+      output_location = "s3://${aws_s3_bucket.lake.id}/athena-results/"
+      encryption_configuration {
+        encryption_option = "SSE_KMS"
+        kms_key_arn       = aws_kms_key.lake.arn
+      }
+    }
+  }
+}
+
+# ─── CloudWatch Dashboard ─────────────────────────────────────────────────────
+# Single pane of glass for RDS health metrics. Referenced in runbooks.
+
+resource "aws_cloudwatch_dashboard" "coverdrive" {
+  dashboard_name = "${local.name_prefix}-overview"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 8
+        height = 6
+        properties = {
+          title   = "RDS CPU Utilization"
+          period  = 300
+          stat    = "Average"
+          metrics = [["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.airflow_metadata.identifier]]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 8
+        y      = 0
+        width  = 8
+        height = 6
+        properties = {
+          title   = "RDS Free Storage (bytes)"
+          period  = 300
+          stat    = "Average"
+          metrics = [["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", aws_db_instance.airflow_metadata.identifier]]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 16
+        y      = 0
+        width  = 8
+        height = 6
+        properties = {
+          title   = "RDS Database Connections"
+          period  = 300
+          stat    = "Average"
+          metrics = [["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", aws_db_instance.airflow_metadata.identifier]]
+        }
+      },
+      {
+        type   = "log"
+        x      = 0
+        y      = 6
+        width  = 24
+        height = 6
+        properties = {
+          title  = "Pipeline Logs (last 1h)"
+          query  = "SOURCE '${aws_cloudwatch_log_group.pipeline.name}' | fields @timestamp, @message | sort @timestamp desc | limit 50"
+          region = var.aws_region
+          view   = "table"
+        }
+      }
+    ]
+  })
+}
+
+# NOTE: X-Ray tracing was evaluated and deliberately deferred.
+# This pipeline is batch-oriented (not request-path), so CloudWatch
+# metrics and alarms satisfy the SLI requirements without the
+# per-segment cost of X-Ray. Add xray:PutTraceSegments to
+# pipeline_task_role and instrument api.py if request tracing is needed.

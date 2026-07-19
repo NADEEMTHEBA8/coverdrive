@@ -2,7 +2,7 @@ coverdrive:
   target: dev
 
   outputs:
-    # ─── Local development: DuckDB reading Silver Parquet from MinIO ────
+    # ─── Local Development: DuckDB reading from local MinIO ────
     dev:
       type: duckdb
       path: "{{ env_var('COVERDRIVE_WAREHOUSE_PATH', 'data/warehouse.duckdb') }}"
@@ -18,13 +18,22 @@ coverdrive:
         s3_url_style: "path"
       threads: 4
 
+    # ─── AWS Environment: Athena Serverless Data Warehouse ────
+    prod:
+      type: athena
+      s3_staging_dir: "s3://{{ env_var('COVERDRIVE_LAKE_BUCKET', 'coverdrive-lake') }}/athena-results/"
+      region_name: "{{ env_var('AWS_REGION', 'ap-south-1') }}"
+      schema: "coverdrive_prod"
+      database: "coverdrive_prod"
+      threads: 4
+
     # ─── CI: Postgres target for SQL-compatibility testing ──────────────
     ci:
       type: postgres
       host: "{{ env_var('PGHOST', 'localhost') }}"
       port: "{{ env_var('PGPORT', '5432') | as_number }}"
       user: "{{ env_var('PGUSER', 'coverdrive') }}"
-      password: "{{ env_var('PGPASSWORD', 'coverdrive') }}"
+      password: "{{ env_var('PGPASSWORD') }}"
       dbname: "{{ env_var('PGDATABASE', 'coverdrive') }}"
       schema: main
       threads: 4

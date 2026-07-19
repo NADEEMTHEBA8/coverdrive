@@ -27,8 +27,8 @@ ASSETS = PROJECT_ROOT / "docs" / "assets"
 ASSETS.mkdir(parents=True, exist_ok=True)
 
 CHROME_BIN = (
-    "/private/var/folders/gb/m5mslhzj70dbtjkt5mr8c6sh0000gn"
-    "/T/AppTranslocation/96680578-D0B7-4FBF-9F21-8AE01C7CDCCD"
+    "/private/var/folders/gb/m5mslhzj70dbtjkt5mr8c6sh0000gn"  # pragma: allowlist secret
+    "/T/AppTranslocation/96680578-D0B7-4FBF-9F21-8AE01C7CDCCD"  # pragma: allowlist secret
     "/d/Google Chrome.app/Contents/MacOS/Google Chrome"
 )
 

@@ -50,6 +50,7 @@ jobs:
   test:
     name: pytest
     runs-on: ubuntu-latest
+    needs: [lint-and-typecheck]
     steps:
       - uses: actions/checkout@v4
 
@@ -70,7 +71,7 @@ jobs:
             --cov=coverdrive \
             --cov-report=term-missing \
             --cov-report=xml \
-            --cov-fail-under=60 \
+            --cov-fail-under=80 \
             -q
 
       - name: Upload coverage artifact
@@ -80,5 +81,3 @@ jobs:
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: ignore
-
-

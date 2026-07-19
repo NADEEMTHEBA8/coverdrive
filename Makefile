@@ -40,7 +40,7 @@ install:  ## Create venv and install all deps (incl. dbt + dev)
 	$(PIP) install --upgrade pip
 	$(PIP) install -e ".[dev,dbt]"
 	$(VENV)/bin/pre-commit install
-	cd $(DBT_DIR) && ../$(DBT) deps
+	$(DBT) deps --project-dir $(DBT_DIR) --profiles-dir $(DBT_DIR)
 
 clean:  ## Remove venv, caches, build artifacts
 	rm -rf $(VENV) .pytest_cache .ruff_cache .mypy_cache
@@ -69,21 +69,29 @@ seed:  ## Load fixture CSVs into Bronze as if freshly scraped
 ingest:  ## Run a fresh scrape from ESPNcricinfo into Bronze
 	$(PY) -m coverdrive.ingestion --mode=scrape
 
-transform:  ## Bronze → Silver: dedupe, type-cast, conform
+transform:  ## Bronze → Silver: dedupe, type-cast, conform using Pandas
 	$(PY) -m coverdrive.transform
+
+enrich:  ## Silver → Gold: PySpark key-salted joins for skewed data
+	export COVERDRIVE_S3_ENDPOINT="http://localhost:9100" && \
+	export BRONZE_S3_PATH="s3a://coverdrive/bronze/" && \
+	export SILVER_S3_PATH="s3a://coverdrive/silver/" && \
+	export GOLD_S3_PATH="s3a://coverdrive/gold/" && \
+	$(PY) -m src.coverdrive.processing.silver_pyspark_etl
 
 quality:  ## Run Pandera quality gates on Silver (halts on failure)
 	$(PY) -m coverdrive.quality
 
-dbt-build:  ## Run dbt: build all models against Silver Parquet
-	cd $(DBT_DIR) && ../$(DBT) build --target=$(DBT_TARGET)
+dbt-build:  ## Run dbt pipelines locally to populate DuckDB
+	$(DBT) deps --project-dir $(DBT_DIR) --profiles-dir $(DBT_DIR)
+	$(DBT) build --target=$(DBT_TARGET) --project-dir $(DBT_DIR) --profiles-dir $(DBT_DIR)
 
-dbt-test:  ## Run dbt tests only
-	cd $(DBT_DIR) && ../$(DBT) test --target=$(DBT_TARGET)
+dbt-test:  ## Run dbt tests
+	$(DBT) test --target=$(DBT_TARGET) --project-dir $(DBT_DIR) --profiles-dir $(DBT_DIR)
 
-dbt-docs:  ## Generate and serve dbt docs (lineage graph)
-	cd $(DBT_DIR) && ../$(DBT) docs generate --target=$(DBT_TARGET)
-	cd $(DBT_DIR) && ../$(DBT) docs serve --target=$(DBT_TARGET)
+dbt-docs:  ## Generate and serve dbt docs
+	$(DBT) docs generate --project-dir $(DBT_DIR) --profiles-dir $(DBT_DIR)
+	$(DBT) docs serve --project-dir $(DBT_DIR) --profiles-dir $(DBT_DIR) --target=$(DBT_TARGET)
 
 api:  ## Start the FastAPI service locally
 	$(PY) -m coverdrive.api
@@ -94,6 +102,7 @@ demo:  ## End-to-end demo: start services, seed fixtures, run full pipeline
 	@until curl -sf http://localhost:9100/minio/health/live >/dev/null 2>&1; do sleep 2; done
 	$(MAKE) seed
 	$(MAKE) transform
+	$(MAKE) enrich
 	$(MAKE) quality
 	$(MAKE) dbt-build
 	@echo ""

@@ -90,8 +90,8 @@ def scrape_table(source_name: str, cfg: PipelineConfig) -> pd.DataFrame:
         frames.append(df)
         page_log.info("scrape.page_ok", rows=len(df))
 
-        if not frames:
-            raise RuntimeError(f"No rows scraped for source {source_name!r}")
+    if not frames:
+        raise RuntimeError(f"No rows scraped for source {source_name!r}")
 
     combined = pd.concat(frames, ignore_index=True)
 
@@ -147,10 +147,9 @@ def write_bronze(
         tmp_path = tmp.name
 
     try:
-        with pq.ParquetWriter(  # type: ignore[no-untyped-call]
+        with pq.ParquetWriter(
             tmp_path, table_pa.schema, compression=cfg.storage.compression
         ) as writer:
-            # Chunking simulates processing large data volumes
             for batch in table_pa.to_batches(max_chunksize=10000):
                 writer.write_batch(batch)
 

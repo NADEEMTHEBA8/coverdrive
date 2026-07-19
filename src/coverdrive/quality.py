@@ -13,7 +13,7 @@ from __future__ import annotations
 import io
 import sys
 from datetime import UTC, datetime
-from typing import Final
+from typing import Any, Final
 
 import pandas as pd
 import pandera.pandas as pa
@@ -108,7 +108,7 @@ class BattingSilverSchema(pa.DataFrameModel):
         coerce = False  # Transform.py already casts. Re-coercing hides bugs.
 
     @pa.dataframe_check
-    def career_span_valid(cls, df: pd.DataFrame) -> Series[bool]:  # type: ignore[misc]  # noqa: N805
+    def career_span_valid(cls: Any, df: pd.DataFrame) -> Series[bool]:  # type: ignore[misc]  # noqa: N805
         """end_year >= start_year when both are present."""
         if "career_start_year" not in df or "career_end_year" not in df:
             return pd.Series([True] * len(df))  # type: ignore[return-value]

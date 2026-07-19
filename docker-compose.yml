@@ -37,7 +37,7 @@ services:
       /bin/sh -c "
       mc alias set local http://minio:9000 minioadmin minioadmin;
       mc mb --ignore-existing local/coverdrive;
-      mc anonymous set download local/coverdrive;
+      mc anonymous set none local/coverdrive;
       echo 'Buckets ready.';
       "
 
@@ -95,7 +95,7 @@ services:
       - |
         set -e
         airflow db migrate
-        airflow users create --role Admin --username admin --password admin --email admin@coverdrive.local --firstname admin --lastname admin || true
+        airflow users create --role Admin --username airflow --password airflow --email admin@coverdrive.local --firstname admin --lastname admin || true
         airflow scheduler &
         exec airflow webserver
 

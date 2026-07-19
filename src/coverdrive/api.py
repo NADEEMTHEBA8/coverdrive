@@ -19,6 +19,7 @@ import sys
 import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
+from importlib.metadata import version
 from typing import Annotated
 
 import duckdb
@@ -37,7 +38,7 @@ log = get_logger(__name__)
 
 class HealthResponse(BaseModel):
     status: str
-    version: str = "0.1.0"
+    version: str = version("coverdrive")
 
 
 class ReadyResponse(BaseModel):
@@ -105,7 +106,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="Coverdrive API",
     description="Read-only access to cricket player performance marts.",
-    version="0.1.0",
+    version=version("coverdrive"),
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",

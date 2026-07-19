@@ -62,14 +62,8 @@ variable "db_username" {
     error_message = "db_username must start with a letter and be 3–16 chars."
   }
 }
-
-variable "db_password" {
-  description = "Master password for the Airflow metadata DB. NEVER commit this. Inject via AWS SSM Parameter Store or `terraform apply -var`."
+variable "alert_email" {
+  description = "Email address to subscribe to the alerts SNS topic. Leave empty to skip (alarms fire but deliver nowhere)."
   type        = string
-  sensitive   = true
-
-  validation {
-    condition     = length(var.db_password) >= 16
-    error_message = "db_password must be at least 16 characters."
-  }
+  default     = ""
 }

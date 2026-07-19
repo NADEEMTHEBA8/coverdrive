@@ -102,7 +102,7 @@ class Settings(BaseSettings):
 
     coverdrive_s3_endpoint: str = "http://localhost:9000"
     coverdrive_s3_access_key: str = "minioadmin"
-    coverdrive_s3_secret_key: str = "minioadmin"  # noqa: S105
+    coverdrive_s3_secret_key: str = "minioadmin"
     coverdrive_s3_bucket: str = "coverdrive"
     coverdrive_s3_use_ssl: bool = False
 

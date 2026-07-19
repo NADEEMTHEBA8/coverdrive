@@ -55,3 +55,23 @@ output "pipeline_log_group_name" {
   description = "CloudWatch log group for pipeline output. Wire this into your ECS task definition."
   value       = aws_cloudwatch_log_group.pipeline.name
 }
+
+output "rds_master_secret_arn" {
+  description = "ARN of the RDS-managed master user secret in Secrets Manager. Use this to locate the credential in ECS task definitions and runbooks."
+  value       = aws_db_instance.airflow_metadata.master_user_secret[0].secret_arn
+}
+
+output "alerts_sns_topic_arn" {
+  description = "ARN of the SNS topic receiving RDS CloudWatch alarm notifications."
+  value       = aws_sns_topic.alerts.arn
+}
+
+output "rds_parameter_group_name" {
+  description = "Name of the custom RDS parameter group (pg_stat_statements, slow-query logging)."
+  value       = aws_db_parameter_group.airflow.name
+}
+
+output "kms_key_arn" {
+  description = "ARN of the CMK used for S3, ECR, CloudWatch, and Athena encryption."
+  value       = aws_kms_key.lake.arn
+}
