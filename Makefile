@@ -69,14 +69,30 @@ seed:  ## Load fixture CSVs into Bronze as if freshly scraped
 ingest:  ## Run a fresh scrape from ESPNcricinfo into Bronze
 	$(PY) -m coverdrive.ingestion --mode=scrape
 
+ingest-cricsheet:  ## Download Cricsheet JSON matches into Bronze
+	$(PY) -m coverdrive.ingestion_cricsheet
+
+ingest-weather:  ## Download historical weather for Cricsheet matches into Bronze
+	$(PY) -m coverdrive.ingestion_weather
+
 transform:  ## Bronze → Silver: dedupe, type-cast, conform using Pandas
 	$(PY) -m coverdrive.transform
 
+transform-cricsheet:  ## Flatten Cricsheet JSON into Silver Parquet using PySpark
+	$(PY) -m src.coverdrive.processing.silver_cricsheet_etl \
+		--bronze-path="s3a://$(COVERDRIVE_S3_BUCKET)/bronze/cricsheet/" \
+		--silver-matches="s3a://$(COVERDRIVE_S3_BUCKET)/silver/cricsheet_matches/" \
+		--silver-balls="s3a://$(COVERDRIVE_S3_BUCKET)/silver/cricsheet_balls/"
+
+transform-weather:  ## Process Weather JSON into Silver Parquet using PySpark
+	$(PY) -m src.coverdrive.processing.silver_weather_etl \
+		--bronze-path="s3a://$(COVERDRIVE_S3_BUCKET)/bronze/weather/*.json" \
+		--silver-path="s3a://$(COVERDRIVE_S3_BUCKET)/silver/weather/"
+
 enrich:  ## Silver → Gold: PySpark key-salted joins for skewed data
-	export COVERDRIVE_S3_ENDPOINT="http://localhost:9100" && \
-	export BRONZE_S3_PATH="s3a://coverdrive/bronze/" && \
-	export SILVER_S3_PATH="s3a://coverdrive/silver/" && \
-	export GOLD_S3_PATH="s3a://coverdrive/gold/" && \
+	export BRONZE_S3_PATH="s3a://$(COVERDRIVE_S3_BUCKET)/bronze/" && \
+	export SILVER_S3_PATH="s3a://$(COVERDRIVE_S3_BUCKET)/silver/" && \
+	export GOLD_S3_PATH="s3a://$(COVERDRIVE_S3_BUCKET)/gold/" && \
 	$(PY) -m src.coverdrive.processing.silver_pyspark_etl
 
 quality:  ## Run Pandera quality gates on Silver (halts on failure)
@@ -101,7 +117,11 @@ demo:  ## End-to-end demo: start services, seed fixtures, run full pipeline
 	@echo "Waiting for MinIO..."
 	@until curl -sf http://localhost:9100/minio/health/live >/dev/null 2>&1; do sleep 2; done
 	$(MAKE) seed
+	$(MAKE) ingest-cricsheet
+	$(MAKE) ingest-weather
 	$(MAKE) transform
+	$(MAKE) transform-cricsheet
+	$(MAKE) transform-weather
 	$(MAKE) enrich
 	$(MAKE) quality
 	$(MAKE) dbt-build
