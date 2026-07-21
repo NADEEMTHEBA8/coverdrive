@@ -167,7 +167,7 @@ resource "aws_security_group" "rds" {
   }
 
   egress {
-    description = "Intra-VPC only — RDS has no legitimate reason to reach the internet"
+    description = "Intra-VPC only - RDS has no legitimate reason to reach the internet"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -217,7 +217,7 @@ resource "aws_s3_bucket" "lake" {
   tags = {
     Name        = "${local.name_prefix}-lake"
     DataClass   = "internal"
-    Description = "Coverdrive lakehouse: bronze (raw) + silver (cleaned) partitioned Parquet"
+    Description = "Coverdrive lakehouse: bronze raw and silver cleaned partitioned Parquet"
   }
 }
 
@@ -355,7 +355,7 @@ resource "aws_db_subnet_group" "main" {
 resource "aws_db_instance" "airflow_metadata" {
   identifier             = "${local.name_prefix}-airflow-meta"
   engine                 = "postgres"
-  engine_version         = "16.3"
+  engine_version         = "16"
   instance_class         = var.db_instance_class
   allocated_storage      = 20
   max_allocated_storage  = 100 # autoscale up to 100GB if needed
@@ -534,7 +534,6 @@ resource "aws_iam_role_policy" "pipeline_logs" {
 resource "aws_cloudwatch_log_group" "pipeline" {
   name              = "/aws/coverdrive/${var.environment}/pipeline"
   retention_in_days = var.environment == "prod" ? 30 : 7
-  kms_key_id        = aws_kms_key.lake.arn
 
   tags = {
     Name = "${local.name_prefix}-pipeline-logs"
@@ -598,7 +597,7 @@ resource "aws_cloudwatch_metric_alarm" "rds_connections" {
   period              = 300
   statistic           = "Average"
   threshold           = 80
-  alarm_description   = "RDS connection count over 80 — possible connection leak"
+  alarm_description   = "RDS connection count over 80 - possible connection leak"
   alarm_actions       = [aws_sns_topic.alerts.arn]
   dimensions = {
     DBInstanceIdentifier = aws_db_instance.airflow_metadata.identifier
@@ -649,6 +648,7 @@ resource "aws_cloudwatch_dashboard" "coverdrive" {
           title   = "RDS CPU Utilization"
           period  = 300
           stat    = "Average"
+          region  = var.aws_region
           metrics = [["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.airflow_metadata.identifier]]
         }
       },
@@ -662,6 +662,7 @@ resource "aws_cloudwatch_dashboard" "coverdrive" {
           title   = "RDS Free Storage (bytes)"
           period  = 300
           stat    = "Average"
+          region  = var.aws_region
           metrics = [["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", aws_db_instance.airflow_metadata.identifier]]
         }
       },
@@ -675,6 +676,7 @@ resource "aws_cloudwatch_dashboard" "coverdrive" {
           title   = "RDS Database Connections"
           period  = 300
           stat    = "Average"
+          region  = var.aws_region
           metrics = [["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", aws_db_instance.airflow_metadata.identifier]]
         }
       },
