@@ -7,7 +7,7 @@
 {# their contribution is subtracted, matching the paper's negated-index       #}
 {# formulation.                                                               #}
 {#                                                                            #}
-{# IMPORTANT — methodological note for interview discussions:                 #}
+{# IMPORTANT — methodological note on target leakage prevention:                #}
 {#   These macros recompute the PCA *from the same features* a downstream    #}
 {#   ML model would predict it from. Treating the PCA as a prediction target  #}
 {#   alongside its constituent features produces target leakage. The mart     #}

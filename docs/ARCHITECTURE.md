@@ -128,11 +128,9 @@ Models:
 | `mart_top_batsmen` | table | eligibility floor (matches ≥ 20); ranked by PCA composite |
 | `mart_top_bowlers` | table | eligibility floor (wickets ≥ 10); ranked by PCA composite |
 
-DuckDB was chosen over Postgres or Snowflake for portfolio reasons: it
-runs in-process, has no infrastructure cost, reads Parquet on S3
-natively, and ships a dbt adapter. For a real production deployment
-the same dbt project compiles against Snowflake/BigQuery/Postgres with
-a profile change.
+DuckDB was chosen over Postgres or Snowflake due to its embedded, in-process execution model: it
+requires zero external infrastructure, reads Parquet on S3 natively via HTTP/S3FS, and ships a mature dbt adapter.
+For enterprise cloud warehouse deployments, the same dbt project compiles seamlessly against Snowflake, BigQuery, or Postgres with a single profile change.
 
 ### 3.4 Serving — FastAPI
 

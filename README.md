@@ -112,9 +112,9 @@ This single command orchestrates: `make up` $\rightarrow$ `make ingest-cricsheet
 
 ---
 
-## 🧠 Technical Interview Preparation: Architectural Decisions
+## 🏛 Architectural Trade-offs & Engineering Decisions
 
-During technical reviews, the following architectural trade-offs are explicitly defended:
+The following key technical decisions address critical production data engineering challenges:
 
 ### 1. PySpark over Pandas for Distributed Joins (The Skew Problem)
 **The Problem:** Joining ball-by-ball delivery facts against a player dimension table causes severe data skew. A handful of players (e.g., Virat Kohli) generate exponentially more telemetry than fringe players. In Pandas, this crashes the server (OOM). In naive Spark, it pins a single executor.

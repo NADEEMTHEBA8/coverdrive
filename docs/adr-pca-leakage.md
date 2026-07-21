@@ -71,7 +71,7 @@ PCA is repositioned from **target** to **descriptive metric**, computed inside t
 
 ### Negative
 
-- The project no longer demonstrates supervised ML. For an ML-engineering portfolio this would be a loss; for a data-engineering portfolio it is **net positive** because the credible story ("I found a flaw and fixed the framing") is more valuable than the spurious one ("look, 99% accuracy").
+- The project focuses on robust analytics engineering rather than supervised ML. Prioritizing architectural correctness over artificial model accuracy establishes a clean, production-grade foundation.
 - Reviewers familiar with Manage & Scariano (2013) may ask "why not predict career averages from early-career stats?" The answer is in `docs/ARCHITECTURE.md` § "Future work": the data needed (ball-by-ball or per-innings records, joined to playing-XI lineups) is materially outside the scope of ESPNcricinfo's flat stat tables. Doing it well requires CricSheet or a similar source.
 
 ### Risks accepted
@@ -89,10 +89,10 @@ PCA is repositioned from **target** to **descriptive metric**, computed inside t
 3. **Reframe as next-season forecasting using the existing data.**
    Rejected for v1. The ESPNcricinfo scrape returns career aggregates per player, not time-series. The temporal split needed for a forecasting task does not exist in the source. Doing this properly requires switching data sources, which is its own project. Listed under "Future work."
 
-4. **Drop the dissertation framing entirely and rebuild around a different cricket question.**
-   Considered but rejected. The dissertation already produced a substantial pipeline (~5,000 rows of cleaned ODI batting and bowling data, two PCA constructions, three model implementations). Throwing it away loses the provenance that makes this portfolio credible — *"I built this in 2022 for my MSc, then in 2026 caught a flaw and reshaped it into a data platform"* is a more honest story than starting over.
+4. **Drop the original framing entirely and rebuild around a different domain.**
+   Considered but rejected. Retaining the raw data foundation while refactoring the data modeling layer highlights proper schema evolution and architectural maturity.
 
-## Lessons (for the postmortem section of the next interview)
+## Engineering Postmortem & Key Takeaways
 
 1. **Target leakage is a data-lineage problem, not a modeling problem.** No amount of cross-validation, no train/test split, no held-out fold catches a target that was *defined as a function of the features*. The fix isn't in the model code; it's in the diagram of where the data comes from.
 

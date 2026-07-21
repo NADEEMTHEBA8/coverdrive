@@ -339,7 +339,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
 # ═════════════════════════════════════════════════════════════════════
 # RDS — Postgres for Airflow metadata.
 #
-# Single-AZ + db.t4g.micro for dev/portfolio. Production would flip
+# Single-AZ + db.t4g.micro for dev environment. Production environments flip
 # multi_az and right-size the instance.
 # ═════════════════════════════════════════════════════════════════════
 
@@ -373,7 +373,7 @@ resource "aws_db_instance" "airflow_metadata" {
   backup_retention_period = var.environment == "prod" ? 7 : 1
   apply_immediately      = var.environment != "prod"
 
-  # Performance Insights — useful for slow-query investigation in interviews.
+  # Performance Insights — enabled for database query profiling and operational monitoring.
   performance_insights_enabled          = true
   performance_insights_retention_period = 7
   parameter_group_name                  = aws_db_parameter_group.airflow.name

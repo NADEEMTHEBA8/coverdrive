@@ -24,12 +24,12 @@ production deployment of Coverdrive.
      `docker-compose.yml` stack locally. Staging might use ECS Fargate;
      prod might use MWAA. Encoding one of those into the same module
      blurs the boundary between data plane and orchestration plane.
-  2. MWAA costs ~$350/month minimum and is not portfolio-budget-friendly.
+  2. MWAA incurs significant base costs and is unnecessary for smaller dev clusters.
   3. ECS Task Definition + Service is `terraform`-able in ~80 LoC and
      belongs in a separate `infra/terraform/compute/` module when needed.
 
 - **CDN / public load balancer for the API** — out of scope; the API
-  is a portfolio artifact, not a production service.
+  is intended for private deployment within the VPC network.
 
 - **KMS CMK** — bucket uses SSE-S3 (AES-256). A real production setup
   would create a customer-managed key with rotation; the trade-off is
@@ -105,7 +105,7 @@ aws s3api delete-objects \
 
 ## State backend
 
-Local state is fine for the portfolio demo, but a real deployment needs
+Local state is suitable for initial evaluation, but multi-developer environments require
 remote state with locking. Create the backend resources once, then add
 a `backend.tf`:
 
