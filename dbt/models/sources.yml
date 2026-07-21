@@ -34,3 +34,16 @@ sources:
             description: "Career total wickets taken in ODIs."
             tests:
               - not_null
+          - name: economy_rate
+            description: "Runs conceded per 6 balls."
+          - name: bowling_strike_rate
+            description: "Balls bowled per wicket taken."
+
+  - name: cricsheet
+    description: "Ball-by-ball and match metadata from Cricsheet."
+    meta:
+      external_location: "s3://{{ env_var('COVERDRIVE_S3_BUCKET', 'coverdrive') }}/silver/{name}/*.parquet"
+    tables:
+      - name: cricsheet_matches
+      - name: cricsheet_balls
+      - name: weather

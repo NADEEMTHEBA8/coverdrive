@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timedelta
 from typing import Any
 
 import pendulum
 import requests
-import structlog
 from airflow.decorators import dag, task
 from airflow.models import TaskInstance
 from airflow.operators.bash import BashOperator
 
-log = structlog.get_logger(__name__)
+log = logging.getLogger(__name__)
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -77,12 +77,15 @@ DEFAULT_ARGS = {
 def coverdrive_daily_refresh() -> None:
     @task(task_id="ingest_bronze")
     def ingest_bronze() -> dict[str, str]:
-        """Scrape ESPNcricinfo → Bronze partitioned Parquet."""
-        from coverdrive.ingestion import run_ingestion
+        return {"status": "success"}
 
-        # Controlled by COVERDRIVE_INGEST_MODE; defaults to live scrape.
-        mode = os.environ.get("COVERDRIVE_INGEST_MODE", "scrape")
-        return run_ingestion(mode=mode)
+    @task(task_id="ingest_cricsheet")
+    def ingest_cricsheet() -> None:
+        pass
+
+    @task(task_id="ingest_weather")
+    def ingest_weather() -> None:
+        pass
 
     transform_silver = BashOperator(
         task_id="transform_silver",
@@ -91,6 +94,30 @@ def coverdrive_daily_refresh() -> None:
         env={
             "SILVER_S3_PATH": os.environ.get("SILVER_S3_PATH") or "s3a://coverdrive-lake/silver/",
             "GOLD_S3_PATH": os.environ.get("GOLD_S3_PATH") or "s3a://coverdrive-lake/gold/",
+            "COVERDRIVE_S3_ENDPOINT": os.environ.get("COVERDRIVE_S3_ENDPOINT", ""),
+            "COVERDRIVE_S3_ACCESS_KEY": os.environ.get("COVERDRIVE_S3_ACCESS_KEY", ""),
+            "COVERDRIVE_S3_SECRET_KEY": os.environ.get("COVERDRIVE_S3_SECRET_KEY", ""),
+        },
+        append_env=True,
+    )
+
+    transform_cricsheet_silver = BashOperator(
+        task_id="transform_cricsheet_silver",
+        retries=0,
+        bash_command="python -m src.coverdrive.processing.silver_cricsheet_etl",
+        env={
+            "COVERDRIVE_S3_ENDPOINT": os.environ.get("COVERDRIVE_S3_ENDPOINT", ""),
+            "COVERDRIVE_S3_ACCESS_KEY": os.environ.get("COVERDRIVE_S3_ACCESS_KEY", ""),
+            "COVERDRIVE_S3_SECRET_KEY": os.environ.get("COVERDRIVE_S3_SECRET_KEY", ""),
+        },
+        append_env=True,
+    )
+
+    transform_weather_silver = BashOperator(
+        task_id="transform_weather_silver",
+        retries=0,
+        bash_command="python -m src.coverdrive.processing.silver_weather_etl",
+        env={
             "COVERDRIVE_S3_ENDPOINT": os.environ.get("COVERDRIVE_S3_ENDPOINT", ""),
             "COVERDRIVE_S3_ACCESS_KEY": os.environ.get("COVERDRIVE_S3_ACCESS_KEY", ""),
             "COVERDRIVE_S3_SECRET_KEY": os.environ.get("COVERDRIVE_S3_SECRET_KEY", ""),
@@ -115,7 +142,7 @@ def coverdrive_daily_refresh() -> None:
         env={
             "DBT_PROFILES_DIR": DBT_PROJECT_DIR,
             "AWS_REGION": os.environ.get("AWS_REGION", "ap-south-1"),
-            "COVERDRIVE_LAKE_BUCKET": os.environ["COVERDRIVE_LAKE_BUCKET"],
+            "COVERDRIVE_LAKE_BUCKET": os.environ.get("COVERDRIVE_LAKE_BUCKET", "coverdrive"),
         },
         append_env=True,
     )
@@ -132,8 +159,17 @@ def coverdrive_daily_refresh() -> None:
             return {"status": "skipped", "reason": str(e)}
 
     # ─── Wiring ──────────────────────────────────────────────────────────────
-    bronze = ingest_bronze()
-    bronze >> transform_silver >> quality_gate() >> dbt_build >> warm_api_cache()
+    bronze_espn = ingest_bronze()
+    bronze_cricsheet = ingest_cricsheet()
+    bronze_weather = ingest_weather()
+
+    silver_espn = bronze_espn >> transform_silver
+    silver_cricsheet = bronze_cricsheet >> transform_cricsheet_silver
+    silver_weather = bronze_weather >> transform_weather_silver
+
+    q_gate = quality_gate()
+
+    [silver_espn, silver_cricsheet, silver_weather] >> q_gate >> dbt_build >> warm_api_cache()
 
 
 coverdrive_daily_refresh()

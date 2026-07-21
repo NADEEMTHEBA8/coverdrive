@@ -58,6 +58,13 @@ class PlayerStats(BaseModel):
     pca_score: float | None = None
 
 
+class PlayerPredictiveContext(BaseModel):
+    player: str
+    avg_runs_in_rain: float | None = None
+    avg_runs_in_hot: float | None = None
+    total_balls_faced: int = 0
+
+
 class RankingEntry(BaseModel):
     rank: int
     player: str
@@ -236,6 +243,43 @@ def player_stats(player: str) -> PlayerStats:
         runs=row[4],
         wickets=row[5],
         pca_score=row[6],
+    )
+
+
+@app.get(
+    "/api/v1/players/{player}/predictive_context",
+    response_model=PlayerPredictiveContext,
+    tags=["predictive"],
+)
+def player_predictive_context(player: str) -> PlayerPredictiveContext:
+    """Predictive context based on weather and venue (from Cricsheet fact model)."""
+    with warehouse_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                p.player_name,
+                AVG(CASE WHEN w.weather_condition = 'Rainy' THEN f.runs_batter ELSE NULL END) as avg_runs_rain,
+                AVG(CASE WHEN w.weather_condition = 'Hot' THEN f.runs_batter ELSE NULL END) as avg_runs_hot,
+                COUNT(f.match_id) as total_balls_faced
+            FROM main_marts.fact_ball_by_ball f
+            JOIN main_marts.dim_player_cricsheet p ON f.batter_id = p.player_id
+            LEFT JOIN main_marts.dim_weather w ON f.weather_id = w.weather_id
+            WHERE LOWER(p.player_name) LIKE LOWER(?)
+            GROUP BY p.player_name
+            """,
+            [f"%{player}%"],
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(
+            status_code=404, detail=f"Player predictive context not found: {player}"
+        )
+
+    return PlayerPredictiveContext(
+        player=row[0],
+        avg_runs_in_rain=row[1],
+        avg_runs_in_hot=row[2],
+        total_balls_faced=row[3],
     )
 
 
