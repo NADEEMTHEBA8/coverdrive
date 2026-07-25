@@ -80,6 +80,34 @@ Before Silver data promotes to Gold analytical models, `pandera` data contracts 
 
 ---
 
+## 📁 Repository Structure
+
+```
+coverdrive/
+├── src/coverdrive/
+│   ├── extract/                    # Extraction layer (exponential backoff & signature probing)
+│   │   ├── espn_html_extractor.py  # Signature-matched ESPN HTML scraper
+│   │   ├── cricsheet_archive.py    # In-memory T20 archive extraction
+│   │   └── open_meteo_api.py       # Weather API with HTTP 429 backoff
+│   ├── transform/                  # Conformance layer (pure functions)
+│   │   └── schema_conform.py       # Silver normalization & deduplication
+│   ├── contracts/                  # Quality layer (Shift-Left gates)
+│   │   └── pandera_gates.py        # Pandera schema enforcement
+│   ├── processing/                 # Distributed compute (PySpark ETL)
+│   │   └── silver_pyspark_etl.py   # Key-salted distributed joins
+│   ├── api.py                      # FastAPI read-only analytics API
+│   └── utils.py                    # Shared logging, S3, and settings primitives
+├── orchestration/
+│   └── dags/
+│       └── core_telemetry_pipeline.py  # Airflow DAG with Astronomer Cosmos dbt nodes
+├── dbt/                            # dbt transformation project (DuckDB engine)
+├── tests/                          # PyTest test suite
+├── infra/terraform/                # AWS IaC module
+└── Makefile                        # Standardized execution entrypoints
+```
+
+---
+
 ## 🚀 Execution Instructions
 
 ### 1. Configure Environment
@@ -101,8 +129,14 @@ make demo
 
 ## 🏛 Key Technical Trade-Offs
 
-### 1. PySpark Key-Salting for Skew Mitigation
+### 1. Signature-Based Table Probing for DOM Resilience
+Web sources frequently alter HTML structures. Rather than relying on rigid table index positions (`table[2]`), the extraction layer probes HTML table payloads with BeautifulSoup for mandatory column signatures (`['player', 'runs']`), throwing an explicit `SchemaDriftError` if upstream structures break.
+
+### 2. PySpark Key-Salting for Skew Mitigation
 Joining wide fact tables with skewed player dimensions can cause executor out-of-memory errors in Spark. By adding a randomized key salt (`_SALT_BUCKETS = 10`), records distribute evenly across Spark partitions during left outer joins.
 
-### 2. DuckDB + dbt for Low-Cost Analytics
+### 3. Granular Airflow Observability via Astronomer Cosmos
+Rather than executing dbt as a black-box bash command, the orchestration layer integrates Astronomer Cosmos (`DbtTaskGroup`), rendering each dbt model as a first-class node in the Airflow execution graph.
+
+### 4. DuckDB + dbt for Low-Cost Analytics
 Rather than maintaining an expensive 24/7 cloud warehouse for medium-scale analytics, Coverdrive executes dbt directly against DuckDB querying Parquet on S3 — delivering sub-second queries at near-zero infrastructure cost.

@@ -64,19 +64,19 @@ logs:  ## Tail logs from all services
 
 # ─── Demo path ────────────────────────────────────────────────────────
 seed:  ## Load fixture CSVs into Bronze as if freshly scraped
-	$(PY) -m coverdrive.ingestion --mode=fixtures
+	$(PY) -m coverdrive.extract.espn_html_extractor --mode=fixtures
 
 ingest:  ## Run a fresh scrape from ESPNcricinfo into Bronze
-	$(PY) -m coverdrive.ingestion --mode=scrape
+	$(PY) -m coverdrive.extract.espn_html_extractor --mode=scrape
 
 ingest-cricsheet:  ## Download Cricsheet JSON matches into Bronze
-	$(PY) -m coverdrive.ingestion_cricsheet
+	$(PY) -m coverdrive.extract.cricsheet_archive
 
 ingest-weather:  ## Download historical weather for Cricsheet matches into Bronze
-	$(PY) -m coverdrive.ingestion_weather
+	$(PY) -m coverdrive.extract.open_meteo_api
 
 transform:  ## Bronze → Silver: dedupe, type-cast, conform using Pandas
-	$(PY) -m coverdrive.transform
+	$(PY) -m coverdrive.transform.schema_conform
 
 transform-cricsheet:  ## Flatten Cricsheet JSON into Silver Parquet using PySpark
 	$(PY) -m src.coverdrive.processing.silver_cricsheet_etl \
@@ -96,7 +96,7 @@ enrich:  ## Silver → Gold: PySpark key-salted joins for skewed data
 	$(PY) -m src.coverdrive.processing.silver_pyspark_etl
 
 quality:  ## Run Pandera quality gates on Silver (halts on failure)
-	$(PY) -m coverdrive.quality
+	$(PY) -m coverdrive.contracts.pandera_gates
 
 dbt-build:  ## Run dbt pipelines locally to populate DuckDB
 	$(DBT) deps --project-dir $(DBT_DIR) --profiles-dir $(DBT_DIR)

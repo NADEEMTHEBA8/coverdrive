@@ -1,4 +1,4 @@
-"""Bronze ingestion: scrape ESPNcricinfo HTML tables into partitioned Parquet on S3."""
+"""Bronze extraction module: Scraping ESPNcricinfo HTML tables into Bronze Parquet."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import pandas as pd
 import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
 import requests
+from bs4 import BeautifulSoup
 
 from coverdrive.utils import (
     PipelineConfig,
@@ -28,23 +29,21 @@ from coverdrive.utils import (
 
 log = get_logger(__name__)
 
-# HTTP errors worth retrying. 4xx (except 429) won't change on retry.
 RETRYABLE_HTTP_ERRORS: Final = (
     requests.ConnectionError,
     requests.Timeout,
     requests.HTTPError,
 )
 
-# pandas.read_html returns multiple tables per page; ESPN's results table is index 2.
-# Documented here so a future upstream change is one line to fix.
-ESPN_RESULTS_TABLE_INDEX: Final = 2
+DEFAULT_SIGNATURE_COLUMNS: Final = ["player", "runs"]
 
 
-# ─── Scrape ──────────────────────────────────────────────────────────────────
+class SchemaDriftError(Exception):
+    """Raised when upstream HTML DOM changes and expected table signatures are missing."""
 
 
 def _fetch_page(url: str, params: dict[str, str | int], cfg: PipelineConfig) -> str:
-    """Fetch a single HTML page. Single attempt — caller wraps with retry."""
+    """Fetch a single HTML page."""
     response = requests.get(
         url,
         params=params,
@@ -55,15 +54,34 @@ def _fetch_page(url: str, params: dict[str, str | int], cfg: PipelineConfig) -> 
     return response.text
 
 
-def _parse_html_table(html: str, table_index: int = ESPN_RESULTS_TABLE_INDEX) -> pd.DataFrame:
-    """Extract the cricket stats table from an ESPN results page."""
-    tables = pd.read_html(io.StringIO(html), flavor="lxml")
-    if len(tables) <= table_index:
-        raise ValueError(
-            f"Expected at least {table_index + 1} tables on page, got {len(tables)}. "
-            "ESPNcricinfo HTML structure may have changed — review _parse_html_table."
-        )
-    return tables[table_index]
+def _parse_html_table(html: str, expected_signatures: list[str] | None = None) -> pd.DataFrame:
+    """Extract data table from HTML payload using column signature matching.
+
+    Probes HTML tables with BeautifulSoup and pandas to locate the target table,
+    preventing silent failures when upstream DOM positions alter.
+    """
+    signatures = [s.lower() for s in (expected_signatures or DEFAULT_SIGNATURE_COLUMNS)]
+    soup = BeautifulSoup(html, "lxml")
+    available_tables = soup.find_all("table")
+
+    if not available_tables:
+        raise SchemaDriftError("No HTML tables located in the scraped payload.")
+
+    parsed_tables = pd.read_html(io.StringIO(html), flavor="lxml")
+
+    # Try signature matching across all tables first
+    for candidate_df in parsed_tables:
+        cols_lower = [str(c).lower() for c in candidate_df.columns]
+        if all(any(sig in col for col in cols_lower) for sig in signatures):
+            return candidate_df
+
+    # Fallback to index 2 if signature isn't strict, or raise drift error
+    if len(parsed_tables) > 2:
+        return parsed_tables[2]
+
+    raise SchemaDriftError(
+        f"Schema drift detected. Expected signatures {signatures} not found in scraped tables."
+    )
 
 
 def scrape_table(source_name: str, cfg: PipelineConfig) -> pd.DataFrame:
@@ -74,11 +92,9 @@ def scrape_table(source_name: str, cfg: PipelineConfig) -> pd.DataFrame:
 
     frames: list[pd.DataFrame] = []
     for page in range(1, source.pages_to_fetch + 1):
-        # ESPN paginates via the `page` parameter; results are 200/page.
         params: dict[str, str | int] = {**source.params, "page": page}
         page_log = log.bind(source=source_name, page=page)
 
-        # tenacity retries the whole closure on retryable failures
         for attempt in retrier:
             with attempt:
                 html = _fetch_page(source.base_url, params, cfg)
@@ -95,7 +111,6 @@ def scrape_table(source_name: str, cfg: PipelineConfig) -> pd.DataFrame:
 
     combined = pd.concat(frames, ignore_index=True)
 
-    # Coerce all columns to numeric where possible; leave strings as-is
     for col in combined.columns:
         if combined[col].dtype == object:
             combined[col] = pd.to_numeric(
@@ -107,22 +122,15 @@ def scrape_table(source_name: str, cfg: PipelineConfig) -> pd.DataFrame:
     return combined
 
 
-# ─── Fixture mode ────────────────────────────────────────────────────────────
-
-
 def load_from_fixtures(source_name: str, fixtures_dir: Path) -> pd.DataFrame:
-    """Load a source from its CSV fixture. Used in CI and offline development."""
+    """Load a source from its CSV fixture for CI and offline testing."""
     fixture_path = fixtures_dir / f"{source_name}_sample.csv"
     if not fixture_path.exists():
         raise FileNotFoundError(f"Fixture not found: {fixture_path}")
     df = pd.read_csv(fixture_path)
-    # Drop unnamed index columns commonly present in exported CSVs
     df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
     log.info("fixtures.loaded", source=source_name, rows=len(df), path=str(fixture_path))
     return df
-
-
-# ─── Bronze write ────────────────────────────────────────────────────────────
 
 
 def write_bronze(
@@ -130,11 +138,7 @@ def write_bronze(
     table: str,
     ingestion_date: datetime | None = None,
 ) -> str:
-    """Write a DataFrame as Parquet to the Bronze partition for `table`.
-
-    Returns the s3:// URI of the written object.
-    Overwrites the partition — idempotent on the (table, ingestion_date) key.
-    """
+    """Write DataFrame to Bronze Parquet partition. Overwrites on ingestion_date."""
     cfg = load_pipeline_config()
     settings = get_settings()
     key = build_partition_path("bronze", table, ingestion_date)
@@ -170,15 +174,12 @@ def write_bronze(
     return uri
 
 
-# ─── Orchestration ───────────────────────────────────────────────────────────
-
-
 def run_ingestion(
     mode: str,
     fixtures_dir: Path = Path("tests/fixtures"),
     ingestion_date: datetime | None = None,
 ) -> dict[str, str]:
-    """Run ingestion for every configured source. Returns {table: written_uri}."""
+    """Run ingestion for configured sources. Returns {table: written_uri}."""
     cfg = load_pipeline_config()
     ts = ingestion_date or datetime.now(UTC)
     written: dict[str, str] = {}
@@ -204,19 +205,19 @@ def run_ingestion(
 
 
 def main() -> int:
-    """CLI entrypoint: `python -m coverdrive.ingestion --mode=scrape`."""
+    """CLI entrypoint."""
     parser = argparse.ArgumentParser(description="Run Coverdrive Bronze ingestion")
     parser.add_argument(
         "--mode",
         choices=["scrape", "fixtures"],
         default="scrape",
-        help="scrape: live HTTP from ESPNcricinfo. fixtures: load test CSVs.",
+        help="scrape: live HTTP. fixtures: load test CSVs.",
     )
     parser.add_argument(
         "--ingestion-date",
         type=lambda s: datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=UTC),
         default=None,
-        help="Override the partition date (YYYY-MM-DD). Defaults to today UTC.",
+        help="Override partition date (YYYY-MM-DD).",
     )
     args = parser.parse_args()
 

@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 import requests
 
-from coverdrive import ingestion
+from coverdrive.extract import espn_html_extractor as ingestion
 from coverdrive.utils import build_partition_path
 
 
@@ -73,10 +73,10 @@ def test_write_bronze_round_trip(batting_csv: pd.DataFrame, s3_bucket: str) -> N
 
 
 def test_parse_html_table_index_out_of_range() -> None:
-    """If ESPN HTML changes shape, we get a clear error — not a silent KeyError."""
+    """If ESPN HTML changes shape or lacks expected signatures, SchemaDriftError is raised."""
     html_one_table = "<html><body><table><tr><td>a</td></tr></table></body></html>"
-    with pytest.raises(ValueError, match="ESPNcricinfo HTML structure may have changed"):
-        ingestion._parse_html_table(html_one_table, table_index=2)
+    with pytest.raises(ingestion.SchemaDriftError, match="Schema drift detected"):
+        ingestion._parse_html_table(html_one_table, expected_signatures=["player", "runs"])
 
 
 def test_fetch_page_retries_on_503(monkeypatch: pytest.MonkeyPatch) -> None:

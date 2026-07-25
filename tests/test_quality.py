@@ -5,13 +5,14 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from coverdrive import quality, transform
-from coverdrive.quality import (
+from coverdrive.contracts import pandera_gates as quality
+from coverdrive.contracts.pandera_gates import (
     BattingSilverSchema,
     BowlingSilverSchema,
     QualityGateFailure,
     validate_table,
 )
+from coverdrive.transform import schema_conform as transform
 
 # ─── Happy path: real fixture data passes ─────────────────────────────────────
 

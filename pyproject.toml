@@ -47,13 +47,14 @@ dev = [
     "types-PyYAML",
     "types-requests",
     "pre-commit>=3.7",
+    "astronomer-cosmos[dbt-duckdb]>=1.4",
 ]
 dbt = ["dbt-core>=1.7", "dbt-duckdb>=1.7"]
 
 [project.scripts]
-coverdrive-ingest = "coverdrive.ingestion:main"
-coverdrive-transform = "coverdrive.transform:main"
-coverdrive-quality = "coverdrive.quality:main"
+coverdrive-ingest = "coverdrive.extract.espn_html_extractor:main"
+coverdrive-transform = "coverdrive.transform.schema_conform:main"
+coverdrive-quality = "coverdrive.contracts.pandera_gates:main"
 coverdrive-api = "coverdrive.api:main"
 
 [build-system]
@@ -116,6 +117,6 @@ branch = true
 source = ["src/coverdrive"]
 omit = [
     "src/coverdrive/api.py",
-    "src/coverdrive/ingestion_cricsheet.py",
-    "src/coverdrive/ingestion_weather.py",
+    "src/coverdrive/extract/cricsheet_archive.py",
+    "src/coverdrive/extract/open_meteo_api.py",
 ]

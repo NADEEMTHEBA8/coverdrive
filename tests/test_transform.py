@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from coverdrive import transform
+from coverdrive.transform import schema_conform as transform
 
 # ─── Generic helpers ─────────────────────────────────────────────────────────
 

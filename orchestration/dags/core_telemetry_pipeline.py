@@ -1,4 +1,4 @@
-"""Daily refresh DAG: Bronze ingestion → Silver transform → quality gate → dbt build."""
+"""Core Telemetry Refresh DAG: Extraction -> Silver Processing -> Pandera Quality Gate -> dbt."""
 
 from __future__ import annotations
 
@@ -15,12 +15,17 @@ from airflow.operators.bash import BashOperator
 
 log = logging.getLogger(__name__)
 
-# ─── Configuration ───────────────────────────────────────────────────────────
+# Try importing Astronomer Cosmos for granular dbt model DAG rendering
+try:
+    from cosmos import ExecutionConfig, ProfileConfig, ProjectConfig
+    from cosmos.providers.dbt.task_group import DbtTaskGroup
+
+    HAS_COSMOS = True
+except ImportError:
+    HAS_COSMOS = False
 
 LOCAL_TZ = pendulum.timezone("UTC")
-DBT_PROJECT_DIR = "/opt/airflow/dbt"
-
-# ─── Failure / SLA callbacks ─────────────────────────────────────────────────
+DBT_PROJECT_DIR = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt")
 
 
 def task_failure_callback(context: dict[str, Any]) -> None:
@@ -43,8 +48,6 @@ def sla_miss_callback(dag, task_list, blocking_task_list, slas, blocking_tis) ->
     log.warning("sla.missed", dag_id=dag.dag_id, tasks=sla_lines)
 
 
-# ─── DAG definition ──────────────────────────────────────────────────────────
-
 DEFAULT_ARGS = {
     "owner": "data-platform",
     "depends_on_past": False,
@@ -53,44 +56,50 @@ DEFAULT_ARGS = {
     "retry_delay": timedelta(minutes=5),
     "retry_exponential_backoff": True,
     "max_retry_delay": timedelta(minutes=30),
-    "sla": timedelta(hours=6),  # End-to-end completion budget.
+    "sla": timedelta(hours=6),
     "on_failure_callback": task_failure_callback,
     "execution_timeout": timedelta(hours=1),
 }
 
 
 @dag(
-    dag_id="coverdrive_daily_refresh",
+    dag_id="coverdrive_telemetry_refresh",
     description=(
-        "Daily refresh: scrape ESPNcricinfo → Silver → quality gate → "
-        "dbt build → API readiness check."
+        "Core telemetry refresh: ingest ESPN/Cricsheet/Weather → Silver → "
+        "Pandera contracts → dbt Gold marts → API readiness check."
     ),
-    schedule="0 0 * * *",  # 00:00 UTC daily
+    schedule="0 0 * * *",
     start_date=datetime(2024, 1, 1, tzinfo=LOCAL_TZ),
-    catchup=False,  # Don't backfill; historical scrapes hit the same source rows.
-    max_active_runs=1,  # Avoid two scrapes overlapping at the source.
+    catchup=False,
+    max_active_runs=1,
     default_args=DEFAULT_ARGS,
     sla_miss_callback=sla_miss_callback,
-    tags=["coverdrive", "batch", "production"],
+    tags=["coverdrive", "core-pipeline", "dbt"],
     doc_md=__doc__,
 )
-def coverdrive_daily_refresh() -> None:
-    @task(task_id="ingest_bronze")
-    def ingest_bronze() -> dict[str, str]:
-        return {"status": "success"}
+def coverdrive_telemetry_refresh() -> None:
+    @task(task_id="extract_espn_telemetry")
+    def extract_espn_telemetry() -> None:
+        from coverdrive.extract.espn_html_extractor import run_ingestion
 
-    @task(task_id="ingest_cricsheet")
-    def ingest_cricsheet() -> None:
-        pass
+        run_ingestion(mode="scrape")
 
-    @task(task_id="ingest_weather")
-    def ingest_weather() -> None:
-        pass
+    @task(task_id="extract_cricsheet_archive")
+    def extract_cricsheet_archive() -> None:
+        from coverdrive.extract.cricsheet_archive import extract_telemetry_archives
+
+        extract_telemetry_archives()
+
+    @task(task_id="extract_weather_api")
+    def extract_weather_api() -> None:
+        from coverdrive.extract.open_meteo_api import run_ingestion
+
+        run_ingestion()
 
     transform_silver = BashOperator(
         task_id="transform_silver",
         retries=0,
-        bash_command="python -m coverdrive.processing.silver_pyspark_etl",
+        bash_command="python -m src.coverdrive.processing.silver_pyspark_etl",
         env={
             "SILVER_S3_PATH": os.environ.get("SILVER_S3_PATH") or "s3a://coverdrive-lake/silver/",
             "GOLD_S3_PATH": os.environ.get("GOLD_S3_PATH") or "s3a://coverdrive-lake/gold/",
@@ -125,51 +134,68 @@ def coverdrive_daily_refresh() -> None:
         append_env=True,
     )
 
-    @task(task_id="quality_gate", retries=0)  # Quality failures shouldn't retry.
-    def quality_gate() -> None:
-        """Hard quality gate. Halts the DAG before dbt if Silver is bad."""
-        from coverdrive.quality import run_quality_gate
+    @task(task_id="enforce_silver_data_contracts", retries=0)
+    def enforce_silver_data_contracts() -> None:
+        """Hard quality gate. Halts DAG before dbt execution if Pandera contracts fail."""
+        from coverdrive.contracts.pandera_gates import run_quality_gate
 
         run_quality_gate()
 
-    dbt_build = BashOperator(
-        task_id="dbt_build",
-        bash_command=(
-            f"cd {DBT_PROJECT_DIR} && "
-            "dbt deps --no-version-check && "
-            "dbt build --target=dev --fail-fast"
-        ),
-        env={
-            "DBT_PROFILES_DIR": DBT_PROJECT_DIR,
-            "AWS_REGION": os.environ.get("AWS_REGION", "ap-south-1"),
-            "COVERDRIVE_LAKE_BUCKET": os.environ.get("COVERDRIVE_LAKE_BUCKET", "coverdrive"),
-        },
-        append_env=True,
-    )
+    if HAS_COSMOS:
+        transform_gold_marts = DbtTaskGroup(
+            group_id="transform_gold_marts",
+            project_config=ProjectConfig(DBT_PROJECT_DIR),
+            profile_config=ProfileConfig(
+                profile_name="coverdrive",
+                target_name="dev",
+            ),
+            execution_config=ExecutionConfig(
+                dbt_executable_path="/usr/local/bin/dbt",
+            ),
+        )
+    else:
+        transform_gold_marts = BashOperator(
+            task_id="dbt_build",
+            bash_command=(
+                f"cd {DBT_PROJECT_DIR} && "
+                "dbt deps --no-version-check && "
+                "dbt build --target=dev --fail-fast"
+            ),
+            env={
+                "DBT_PROFILES_DIR": DBT_PROJECT_DIR,
+                "AWS_REGION": os.environ.get("AWS_REGION", "ap-south-1"),
+                "COVERDRIVE_LAKE_BUCKET": os.environ.get("COVERDRIVE_LAKE_BUCKET", "coverdrive"),
+            },
+            append_env=True,
+        )
 
     @task(task_id="warm_api_cache")
     def warm_api_cache() -> dict[str, Any]:
-        """Touch the API readiness endpoint so the FastAPI process opens DuckDB."""
+        """Touch API readiness endpoint so FastAPI opens DuckDB."""
         try:
             response = requests.get("http://api:8000/readyz", timeout=10)
             return {"status_code": response.status_code, "body": response.json()}
         except requests.RequestException as e:
-            # Non-blocking: API may not be deployed in every environment.
             log.warning("api.warmup.skipped", reason=str(e))
             return {"status": "skipped", "reason": str(e)}
 
-    # ─── Wiring ──────────────────────────────────────────────────────────────
-    bronze_espn = ingest_bronze()
-    bronze_cricsheet = ingest_cricsheet()
-    bronze_weather = ingest_weather()
+    # ─── DAG Lineage ────────────────────────────────────────────────────────
+    espn_task = extract_espn_telemetry()
+    cricsheet_task = extract_cricsheet_archive()
+    weather_task = extract_weather_api()
 
-    silver_espn = bronze_espn >> transform_silver
-    silver_cricsheet = bronze_cricsheet >> transform_cricsheet_silver
-    silver_weather = bronze_weather >> transform_weather_silver
+    silver_espn = espn_task >> transform_silver
+    silver_cricsheet = cricsheet_task >> transform_cricsheet_silver
+    silver_weather = weather_task >> transform_weather_silver
 
-    q_gate = quality_gate()
+    q_gate = enforce_silver_data_contracts()
 
-    [silver_espn, silver_cricsheet, silver_weather] >> q_gate >> dbt_build >> warm_api_cache()
+    (
+        [silver_espn, silver_cricsheet, silver_weather]
+        >> q_gate
+        >> transform_gold_marts
+        >> warm_api_cache()
+    )
 
 
-coverdrive_daily_refresh()
+coverdrive_telemetry_refresh()
