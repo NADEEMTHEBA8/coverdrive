@@ -3,7 +3,7 @@
 import argparse
 import json
 import time
-from typing import Final
+from typing import Any, Final
 
 import requests
 from structlog import get_logger
@@ -22,21 +22,24 @@ WEATHER_URL: Final = "https://archive-api.open-meteo.com/v1/archive"
 
 def _get_lat_lon(city: str) -> tuple[float, float] | None:
     """Fetch coordinates for a city using Open-Meteo geocoding."""
-    resp = requests.get(
-        GEOCODE_URL, params={"name": city, "count": 1, "format": "json"}, timeout=10
-    )
+    params: dict[str, Any] = {"name": city, "count": 1, "format": "json"}
+    resp = requests.get(GEOCODE_URL, params=params, timeout=10)
     if resp.status_code != 200:
         return None
-    data = resp.json()
+    data: dict[str, Any] = resp.json()
     if not data.get("results"):
         return None
     res = data["results"][0]
-    return res.get("latitude"), res.get("longitude")
+    lat = res.get("latitude")
+    lon = res.get("longitude")
+    if lat is not None and lon is not None:
+        return float(lat), float(lon)
+    return None
 
 
-def _get_weather(lat: float, lon: float, date_str: str) -> dict | None:
+def _get_weather(lat: float, lon: float, date_str: str) -> dict[str, Any] | None:
     """Fetch historical weather for a specific lat/lon and date."""
-    params = {
+    params: dict[str, Any] = {
         "latitude": lat,
         "longitude": lon,
         "start_date": date_str,
@@ -47,7 +50,8 @@ def _get_weather(lat: float, lon: float, date_str: str) -> dict | None:
     resp = requests.get(WEATHER_URL, params=params, timeout=10)
     if resp.status_code != 200:
         return None
-    return resp.json()
+    res: dict[str, Any] = resp.json()
+    return res
 
 
 def ingest_weather() -> None:

@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Final
 
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow.parquet as pq  # type: ignore[import-untyped]
 import requests
 
 from coverdrive.utils import (

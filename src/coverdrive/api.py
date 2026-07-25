@@ -258,8 +258,10 @@ def player_predictive_context(player: str) -> PlayerPredictiveContext:
             """
             SELECT
                 p.player_name,
-                AVG(CASE WHEN w.weather_condition = 'Rainy' THEN f.runs_batter ELSE NULL END) as avg_runs_rain,
-                AVG(CASE WHEN w.weather_condition = 'Hot' THEN f.runs_batter ELSE NULL END) as avg_runs_hot,
+                AVG(CASE WHEN w.weather_condition = 'Rainy'
+                    THEN f.runs_batter ELSE NULL END) as avg_runs_rain,
+                AVG(CASE WHEN w.weather_condition = 'Hot'
+                    THEN f.runs_batter ELSE NULL END) as avg_runs_hot,
                 COUNT(f.match_id) as total_balls_faced
             FROM main_marts.fact_ball_by_ball f
             JOIN main_marts.dim_player_cricsheet p ON f.batter_id = p.player_id
