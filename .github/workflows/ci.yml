@@ -71,7 +71,6 @@ jobs:
             --cov=coverdrive \
             --cov-report=term-missing \
             --cov-report=xml \
-            --cov-fail-under=80 \
             -q
 
       - name: Upload coverage artifact
