@@ -1,13 +1,21 @@
 """Silver ETL: Flatten nested Cricsheet JSON into tabular Parquet using PySpark."""
 
 import argparse
+import io
 import os
+import sys
+import zipfile
+from collections.abc import Iterator
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, explode, input_file_name, regexp_extract
 from structlog import get_logger
 
-from coverdrive.utils import configure_logging
+from coverdrive.utils import configure_logging, get_s3_client, get_settings
+
+# Ensure PySpark workers match current Python virtualenv interpreter
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
 log = get_logger(__name__)
 
@@ -18,11 +26,61 @@ def process_cricsheet(
     """Flatten Cricsheet JSON into matches and ball-by-ball datasets."""
     log.info("cricsheet_etl.start", bronze_path=bronze_path)
 
-    # 1. Read Raw JSON (PySpark infers the complex nested schema)
-    raw_df = spark.read.option("multiline", "true").json(bronze_path)
+    # Check if direct zip archive exists in bronze storage
+    settings = get_settings()
 
-    # Extract match_id from filename (e.g., "1389389.json" -> "1389389")
-    df = raw_df.withColumn("match_id", regexp_extract(input_file_name(), r"(\d+)\.json", 1))
+    is_zip = False
+    try:
+        s3_client = get_s3_client()
+        s3_client.head_object(
+            Bucket=settings.coverdrive_s3_bucket, Key="bronze/cricsheet/t20s_json.zip"
+        )
+        is_zip = True
+    except Exception:
+        is_zip = False
+
+    if is_zip:
+        log.info("cricsheet_etl.reading_direct_zip", bucket=settings.coverdrive_s3_bucket)
+        s3_client = get_s3_client()
+        resp = s3_client.get_object(
+            Bucket=settings.coverdrive_s3_bucket, Key="bronze/cricsheet/t20s_json.zip"
+        )
+        zip_bytes = resp["Body"].read()
+
+        def unzip_entries(zip_payload: bytes) -> Iterator[tuple[str, str]]:
+            with zipfile.ZipFile(io.BytesIO(zip_payload)) as z:
+                for fn in z.namelist():
+                    if fn.endswith(".json"):
+                        match_id = fn.split("/")[-1].replace(".json", "")
+                        content = z.read(fn).decode("utf-8")
+                        yield (match_id, content)
+
+        sc = spark.sparkContext
+        pairs_rdd = sc.parallelize([zip_bytes]).flatMap(unzip_entries)
+        json_rdd = pairs_rdd.map(lambda x: x[1])
+
+        raw_df = spark.read.option("multiline", "true").json(json_rdd)
+
+        # Extract match_id from info/meta
+        from pyspark.sql.functions import concat_ws, sha2
+
+        df = raw_df.withColumn(
+            "match_id",
+            sha2(
+                concat_ws(
+                    "_",
+                    col("info.teams").getItem(0),
+                    col("info.teams").getItem(1),
+                    col("info.dates").getItem(0),
+                ),
+                256,
+            ),
+        )
+    else:
+        # 1. Read Raw JSON (PySpark infers the complex nested schema)
+        raw_df = spark.read.option("multiline", "true").json(bronze_path)
+        # Extract match_id from filename (e.g., "1389389.json" -> "1389389")
+        df = raw_df.withColumn("match_id", regexp_extract(input_file_name(), r"(\d+)\.json", 1))
 
     log.info("cricsheet_etl.read", rows=df.count())
 
@@ -96,26 +154,25 @@ def main() -> None:
 
     spark = (
         SparkSession.builder.appName("CricsheetETL")
+        .config("spark.driver.memory", "4g")
         .config(
             "spark.jars.packages",
             "org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262",
         )
         .getOrCreate()
     )
-    # Configure S3 endpoint for local MinIO if needed
-    endpoint = os.environ.get("COVERDRIVE_S3_ENDPOINT")
-    if endpoint:
-        sc = spark.sparkContext
-        sc._jsc.hadoopConfiguration().set("fs.s3a.endpoint", endpoint)
-        sc._jsc.hadoopConfiguration().set(
-            "fs.s3a.access.key", os.environ.get("COVERDRIVE_S3_ACCESS_KEY", "minioadmin")
-        )
-        sc._jsc.hadoopConfiguration().set(
-            "fs.s3a.secret.key", os.environ.get("COVERDRIVE_S3_SECRET_KEY", "minioadmin")
-        )
+    # Configure S3 credentials for Hadoop S3A (MinIO or AWS S3)
+    from coverdrive.utils import get_settings
+
+    settings = get_settings()
+    sc = spark.sparkContext
+    sc._jsc.hadoopConfiguration().set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+    sc._jsc.hadoopConfiguration().set("fs.s3a.access.key", settings.coverdrive_s3_access_key)
+    sc._jsc.hadoopConfiguration().set("fs.s3a.secret.key", settings.coverdrive_s3_secret_key)
+    if settings.coverdrive_s3_endpoint:
+        sc._jsc.hadoopConfiguration().set("fs.s3a.endpoint", settings.coverdrive_s3_endpoint)
         sc._jsc.hadoopConfiguration().set("fs.s3a.path.style.access", "true")
         sc._jsc.hadoopConfiguration().set("fs.s3a.connection.ssl.enabled", "false")
-        sc._jsc.hadoopConfiguration().set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
 
     process_cricsheet(spark, args.bronze_path, args.silver_matches, args.silver_balls)
 

@@ -326,7 +326,13 @@ def write_silver(df: pd.DataFrame, table: str, ingestion_date: datetime | None =
     key = build_partition_path("silver", table, ingestion_date)
 
     buffer = io.BytesIO()
-    df.to_parquet(buffer, engine="pyarrow", compression=cfg.storage.compression, index=False)
+    df.to_parquet(
+        buffer,
+        engine="pyarrow",
+        compression=cfg.storage.compression,
+        index=False,
+        use_dictionary=False,
+    )
     buffer.seek(0)
 
     s3 = get_s3_client()

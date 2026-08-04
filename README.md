@@ -44,18 +44,39 @@ flowchart LR
 
 ---
 
-## 📸 Production Proof & Infrastructure Validation
+## 📸 Production Proof & Cloud Infrastructure Validation
 
-The pipeline includes built-in verification artifacts demonstrating live service execution:
+The pipeline includes built-in verification artifacts demonstrating live cloud service execution across **5,591+ T20 matches** and **1,264,534+ ball-by-ball delivery records**:
 
-* **MinIO / AWS S3 Storage Partitions:**
-  ![MinIO Partitions](docs/assets/minio_partitions.png)
+* **AWS S3 Medallion Bucket & Layer Structure (`s3://coverdrive-dev-lake-3710e7fd`):**
+  ![AWS S3 Medallion Layers](docs/screenshots/coverdrive_11_aws_s3_medallion_layers.png)
 
-* **Apache Airflow Orchestration DAG:**
-  ![Airflow Execution](docs/assets/airflow_dag_success.png)
+* **AWS S3 Cloud Storage Footprint (461.6 MB / 9,813 Objects):**
+  ![AWS S3 Total Size](docs/screenshots/coverdrive_15_aws_s3_total_size_461mb.png)
 
-* **FastAPI Analytics Endpoint:**
-  ![Swagger REST Response](docs/assets/api_batsmen_response.png)
+* **AWS Athena Serverless SQL Querying over S3 Parquet (515 ms / 4.11 KB scanned):**
+  ![AWS Athena Query](docs/screenshots/coverdrive_14_aws_athena_sql_execution.png)
+
+* **FastAPI Analytics REST API & Interactive OpenAPI Docs (`/docs`):**
+  ![FastAPI Swagger UI](docs/screenshots/coverdrive_09_fastapi_swagger_docs.png)
+
+* **FastAPI Live 200 OK JSON Query Response (`/api/v1/players/v kohli/stats`):**
+  ![FastAPI Live Response](docs/screenshots/coverdrive_10_fastapi_live_response.png)
+
+* **Pandera Shift-Left Data Quality Contract Enforcement (`make quality`):**
+  ![Pandera Quality Gates](docs/screenshots/coverdrive_06_pandera_quality_gates.png)
+
+* **PySpark Key-Salted Gold Layer Enrichment (`make enrich`):**
+  ![PySpark Gold Enrichment](docs/screenshots/coverdrive_07_pyspark_gold_enrichment.png)
+
+* **dbt DuckDB Warehouse Build & 42 Data Tests (`make dbt-build`):**
+  ![dbt Build & Test Output](docs/screenshots/coverdrive_08_dbt_42_models_passed.png)
+
+* **PyTest Test Suite & Line Coverage Gate (`35/35 Passed`, 68% Coverage):**
+  ![PyTest Test Suite](docs/screenshots/coverdrive_16_pytest_35_passed_coverage.png)
+
+* **Apache Airflow Orchestration DAG Pipeline:**
+  ![Airflow Execution DAG](docs/screenshots/coverdrive_17_airflow_pipeline_dag.png)
 
 ---
 

@@ -16,6 +16,7 @@ coverdrive:
         s3_secret_access_key: "{{ env_var('COVERDRIVE_S3_SECRET_KEY', 'minioadmin') }}"
         s3_use_ssl: "{{ env_var('COVERDRIVE_S3_USE_SSL', 'false') }}"
         s3_url_style: "path"
+        http_timeout: 120000
       threads: 4
 
     # ─── AWS Environment: Athena Serverless Data Warehouse ────

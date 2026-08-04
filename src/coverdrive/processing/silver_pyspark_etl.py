@@ -21,12 +21,16 @@ import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, concat, floor, lit, lower, rand, regexp_replace, trim
 
-from coverdrive.utils import configure_logging, get_logger
+from coverdrive.utils import configure_logging, get_logger, get_settings
+
+# Ensure PySpark workers match current Python virtualenv interpreter
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
 configure_logging()
 log = get_logger(__name__)
 
-# Empirically tuned for the ESPN dataset (~2,800 players).  At this scale,
+# Empirically tuned for the ESPN dataset (~2,800 players). At this scale,
 # salting is more educational than necessary — the real value shows up when the
 # dataset grows to millions of delivery-level ball-by-ball rows.
 _SALT_BUCKETS: int = 10
@@ -38,8 +42,14 @@ def create_spark_session() -> SparkSession:
     Routes to MinIO when ``COVERDRIVE_S3_ENDPOINT`` is set, so the same
     entrypoint works locally and in EMR/Glue without code changes.
     """
+    settings = get_settings()
+    aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", settings.coverdrive_s3_access_key)
+    aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", settings.coverdrive_s3_secret_key)
+
     builder = (
         SparkSession.builder.appName("Coverdrive-Gold-ETL")
+        .config("spark.driver.memory", "4g")
+        .config("spark.sql.parquet.enableVectorizedReader", "false")
         .config(
             "spark.jars.packages",
             "org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262",
@@ -47,16 +57,14 @@ def create_spark_session() -> SparkSession:
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.connection.timeout", "60000")
         .config("spark.hadoop.fs.s3a.connection.establish.timeout", "60000")
+        .config("spark.hadoop.fs.s3a.access.key", aws_access_key)
+        .config("spark.hadoop.fs.s3a.secret.key", aws_secret_key)
     )
 
     s3_endpoint = os.getenv("COVERDRIVE_S3_ENDPOINT")
     if s3_endpoint:
-        access_key = os.environ["COVERDRIVE_S3_ACCESS_KEY"]
-        secret_key = os.environ["COVERDRIVE_S3_SECRET_KEY"]
         builder = (
             builder.config("spark.hadoop.fs.s3a.endpoint", s3_endpoint)
-            .config("spark.hadoop.fs.s3a.access.key", access_key)
-            .config("spark.hadoop.fs.s3a.secret.key", secret_key)
             .config("spark.hadoop.fs.s3a.path.style.access", "true")
             .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
         )
@@ -65,17 +73,7 @@ def create_spark_session() -> SparkSession:
 
 
 def process_silver_to_gold(spark: SparkSession, silver_path: str, gold_path: str) -> None:
-    """Join Silver batting and bowling tables into a Gold player-stats table.
-
-    Key-salting prevents a small number of prolific all-rounders from pinning a
-    single executor during the join — the skew here is in the long tail of
-    career innings counts, not mean skew.
-
-    Args:
-        spark: Active SparkSession.
-        silver_path: Base S3/local path to Silver Parquet (e.g. ``s3a://…/silver/``).
-        gold_path:   Base S3/local path for Gold output (e.g. ``s3a://…/gold/``).
-    """
+    """Join Silver batting and bowling tables into a Gold player-stats table."""
     batting_path = f"{silver_path}batting/*/*.parquet"
     bowling_path = f"{silver_path}bowling/*/*.parquet"
 
@@ -94,11 +92,13 @@ def process_silver_to_gold(spark: SparkSession, silver_path: str, gold_path: str
         raise
 
     # Normalise player names: strip country suffixes like "(IND)" before joining.
+    player_col_bat = "player" if "player" in batting_df.columns else "Player"
+    player_col_bowl = "player" if "player" in bowling_df.columns else "Player"
     batting_df = batting_df.withColumn(
-        "player_clean", lower(trim(regexp_replace(col("Player"), r"\s*\([^)]+\)\s*$", "")))
+        "player_clean", lower(trim(regexp_replace(col(player_col_bat), r"\s*\([^)]+\)\s*$", "")))
     )
     bowling_df = bowling_df.withColumn(
-        "player_clean", lower(trim(regexp_replace(col("Player"), r"\s*\([^)]+\)\s*$", "")))
+        "player_clean", lower(trim(regexp_replace(col(player_col_bowl), r"\s*\([^)]+\)\s*$", "")))
     )
 
     # Salting: randomise batting key → replicate bowling N times → distribute skew.

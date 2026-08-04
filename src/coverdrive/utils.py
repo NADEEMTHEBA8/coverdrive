@@ -220,7 +220,9 @@ def get_s3_client() -> Any:  # noqa: ANN401
     kwargs: dict[str, Any] = {
         "aws_access_key_id": settings.coverdrive_s3_access_key,
         "aws_secret_access_key": settings.coverdrive_s3_secret_key,
-        "config": BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"}),
+        "config": BotoConfig(
+            signature_version="s3v4", s3={"addressing_style": "path"}, max_pool_connections=100
+        ),
         "use_ssl": settings.coverdrive_s3_use_ssl,
     }
     if settings.coverdrive_s3_endpoint:

@@ -85,7 +85,7 @@ services:
     ports:
       - "8180:8080"
     volumes:
-      - ./airflow/dags:/opt/airflow/dags
+      - ./orchestration/dags:/opt/airflow/dags
       - ./dbt:/opt/airflow/dbt
       - ./:/opt/coverdrive
       - airflow-logs:/opt/airflow/logs

@@ -8,7 +8,7 @@ sources:
   - name: silver
     description: "Cleaned, schema-conformed cricket data from the Silver lakehouse layer."
     meta:
-      external_location: "s3://{{ env_var('COVERDRIVE_S3_BUCKET', 'coverdrive') }}/silver/{name}/ingestion_date=*/data.parquet"
+      external_location: "s3://{{ env_var('COVERDRIVE_S3_BUCKET', 'coverdrive-dev-lake-3710e7fd') }}/silver/{name}/*/*.parquet"
       owner: "data-platform@boundaryline.example"
     tables:
       - name: batting
@@ -42,7 +42,7 @@ sources:
   - name: cricsheet
     description: "Ball-by-ball and match metadata from Cricsheet."
     meta:
-      external_location: "s3://{{ env_var('COVERDRIVE_S3_BUCKET', 'coverdrive') }}/silver/{name}/*.parquet"
+      external_location: "s3://{{ env_var('COVERDRIVE_S3_BUCKET', 'coverdrive-dev-lake-3710e7fd') }}/silver/{name}/*.parquet"
     tables:
       - name: cricsheet_matches
       - name: cricsheet_balls
