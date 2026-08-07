@@ -5,13 +5,18 @@ from __future__ import annotations
 import pytest
 import requests
 
-from coverdrive.extract.espn_html_extractor import (
-    SchemaDriftError,
-    _parse_html_table,
-)
-from coverdrive.extract.open_meteo_api import (
-    fetch_venue_coordinates,
-)
+try:
+    from src.ingestion.espn_html_extractor import (
+        SchemaDriftError,
+        _parse_html_table,
+    )
+    from src.ingestion.open_meteo_api import fetch_venue_coordinates
+except ImportError:
+    from coverdrive.extract.espn_html_extractor import (
+        SchemaDriftError,
+        _parse_html_table,
+    )
+    from coverdrive.extract.open_meteo_api import fetch_venue_coordinates
 
 
 def test_signature_matching_finds_correct_table_despite_decoy_tables() -> None:

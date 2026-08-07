@@ -28,7 +28,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from coverdrive.utils import configure_logging, get_logger, get_settings
+from src.common.utils import configure_logging, get_logger, get_settings
 
 log = get_logger(__name__)
 

@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 
 import pandas as pd
 
-from coverdrive.utils import (
+from src.common.utils import (
     build_partition_path,
     configure_logging,
     get_logger,

@@ -10,7 +10,7 @@ from typing import Final
 import requests
 from structlog import get_logger
 
-from coverdrive.utils import (
+from src.common.utils import (
     configure_logging,
     get_s3_client,
     get_settings,

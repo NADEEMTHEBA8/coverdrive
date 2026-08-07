@@ -27,7 +27,10 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
 
     # Clear cached settings/config between tests.
-    from coverdrive.utils import get_settings, load_pipeline_config
+    try:
+        from src.common.utils import get_settings, load_pipeline_config
+    except ImportError:
+        from coverdrive.utils import get_settings, load_pipeline_config
 
     get_settings.cache_clear()
     load_pipeline_config.cache_clear()
@@ -106,7 +109,10 @@ quality:
 """
     )
     # Point the config loader at our temp file by monkeypatching its default arg.
-    from coverdrive import utils
+    try:
+        from src.common import utils
+    except ImportError:
+        from coverdrive import utils
 
     monkeypatch.setattr(
         utils,

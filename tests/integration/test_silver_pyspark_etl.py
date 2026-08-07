@@ -3,9 +3,16 @@ import tempfile
 
 import pytest
 from pyspark.sql import SparkSession
-from src.coverdrive.processing.silver_pyspark_etl import (
-    process_silver_to_gold,
-)
+try:
+    from src.ingestion.silver_pyspark_etl import (
+        _SALT_BUCKETS,
+        process_silver_to_gold,
+    )
+except ImportError:
+    from coverdrive.processing.silver_pyspark_etl import (
+        _SALT_BUCKETS,
+        process_silver_to_gold,
+    )
 
 
 @pytest.fixture(scope="session")

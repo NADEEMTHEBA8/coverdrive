@@ -21,7 +21,7 @@ import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, concat, floor, lit, lower, rand, regexp_replace, trim
 
-from coverdrive.utils import configure_logging, get_logger, get_settings
+from src.common.utils import configure_logging, get_logger, get_settings
 
 # Ensure PySpark workers match current Python virtualenv interpreter
 os.environ["PYSPARK_PYTHON"] = sys.executable

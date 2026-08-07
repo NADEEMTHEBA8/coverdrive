@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pandas as pd
 
-from coverdrive.transform import schema_conform as transform
+try:
+    from src.models import schema_conform as transform
+except ImportError:
+    from coverdrive.transform import schema_conform as transform
 
 # ─── Generic helpers ─────────────────────────────────────────────────────────
 

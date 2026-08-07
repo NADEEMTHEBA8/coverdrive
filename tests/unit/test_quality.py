@@ -5,14 +5,24 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from coverdrive.contracts import pandera_gates as quality
-from coverdrive.contracts.pandera_gates import (
-    BattingSilverSchema,
-    BowlingSilverSchema,
-    QualityGateFailure,
-    validate_table,
-)
-from coverdrive.transform import schema_conform as transform
+try:
+    from src.models import schema_conform as transform
+    from src.quality import validation_rules as quality
+    from src.quality.validation_rules import (
+        BattingSilverSchema,
+        BowlingSilverSchema,
+        QualityGateFailure,
+        validate_table,
+    )
+except ImportError:
+    from coverdrive.contracts import pandera_gates as quality
+    from coverdrive.contracts.pandera_gates import (
+        BattingSilverSchema,
+        BowlingSilverSchema,
+        QualityGateFailure,
+        validate_table,
+    )
+    from coverdrive.transform import schema_conform as transform
 
 # ─── Happy path: real fixture data passes ─────────────────────────────────────
 

@@ -16,7 +16,7 @@ import pyarrow.parquet as pq  # type: ignore[import-untyped]
 import requests
 from bs4 import BeautifulSoup
 
-from coverdrive.utils import (
+from src.common.utils import (
     PipelineConfig,
     build_partition_path,
     configure_logging,

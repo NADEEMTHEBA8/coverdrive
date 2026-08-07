@@ -10,8 +10,14 @@ import pandas as pd
 import pytest
 import requests
 
-from coverdrive.extract import espn_html_extractor as ingestion
-from coverdrive.utils import build_partition_path
+try:
+    from src.ingestion import espn_html_extractor as ingestion
+except ImportError:
+    from coverdrive.extract import espn_html_extractor as ingestion
+try:
+    from src.common.utils import build_partition_path
+except ImportError:
+    from coverdrive.utils import build_partition_path
 
 
 def test_build_partition_path_format() -> None:
@@ -97,10 +103,16 @@ def test_fetch_page_retries_on_503(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(requests, "get", flaky_get)
     # Use the real retry behavior with a tiny number of attempts
-    from coverdrive.utils import load_pipeline_config
+    try:
+        from src.common.utils import load_pipeline_config
+    except ImportError:
+        from coverdrive.utils import load_pipeline_config
 
     cfg = load_pipeline_config()
-    from coverdrive.utils import make_retrier
+    try:
+        from src.common.utils import make_retrier
+    except ImportError:
+        from coverdrive.utils import make_retrier
 
     retrier = make_retrier(ingestion.RETRYABLE_HTTP_ERRORS)
     for attempt in retrier:

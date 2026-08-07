@@ -7,7 +7,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col
 from structlog import get_logger
 
-from coverdrive.utils import configure_logging
+from src.common.utils import configure_logging
 
 log = get_logger(__name__)
 

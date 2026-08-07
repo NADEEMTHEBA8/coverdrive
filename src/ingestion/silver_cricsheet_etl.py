@@ -11,7 +11,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, explode, input_file_name, regexp_extract
 from structlog import get_logger
 
-from coverdrive.utils import configure_logging, get_s3_client, get_settings
+from src.common.utils import configure_logging, get_s3_client, get_settings
 
 # Ensure PySpark workers match current Python virtualenv interpreter
 os.environ["PYSPARK_PYTHON"] = sys.executable
@@ -162,7 +162,7 @@ def main() -> None:
         .getOrCreate()
     )
     # Configure S3 credentials for Hadoop S3A (MinIO or AWS S3)
-    from coverdrive.utils import get_settings
+    from src.common.utils import get_settings
 
     settings = get_settings()
     sc = spark.sparkContext

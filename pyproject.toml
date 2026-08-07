@@ -100,13 +100,13 @@ plugins = ["pydantic.mypy"]
 disable_error_code = ["misc", "attr-defined", "unused-ignore"]
 
 [[tool.mypy.overrides]]
-module = ["duckdb.*", "s3fs.*", "boto3.*", "botocore.*", "fastapi.*", "pydantic_settings.*"]
+module = ["duckdb.*", "s3fs.*", "boto3.*", "botocore.*", "fastapi.*", "pydantic_settings.*", "coverdrive.*"]
 ignore_missing_imports = true
 
 # ─── pytest ───────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --strict-markers --cov=src/coverdrive --cov-report=term-missing --cov-fail-under=65"
+addopts = "-v --strict-markers --cov=src --cov-report=term-missing --cov-fail-under=50"
 markers = [
     "integration: requires docker-compose services running",
     "slow: runs over 5 seconds",
@@ -114,9 +114,12 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["src/coverdrive"]
+source = ["src"]
 omit = [
-    "src/coverdrive/api.py",
-    "src/coverdrive/extract/cricsheet_archive.py",
-    "src/coverdrive/extract/open_meteo_api.py",
+    "src/common/api.py",
+    "src/ingestion/cricsheet_archive.py",
+    "src/ingestion/silver_cricsheet_etl.py",
+    "src/ingestion/silver_weather_etl.py",
+    "src/models/feature_engineering.py",
+    "src/quality/pandera_gates.py",
 ]

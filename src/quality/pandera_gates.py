@@ -20,7 +20,7 @@ import pandera.pandas as pa
 from pandera.errors import SchemaError, SchemaErrors
 from pandera.typing import Series
 
-from coverdrive.utils import (
+from src.common.utils import (
     build_partition_path,
     configure_logging,
     get_logger,
