@@ -80,26 +80,35 @@ DEFAULT_ARGS = {
 def coverdrive_telemetry_refresh() -> None:
     @task(task_id="extract_espn_telemetry")
     def extract_espn_telemetry() -> None:
-        from coverdrive.extract.espn_html_extractor import run_ingestion
+        try:
+            from src.ingestion.espn_html_extractor import run_ingestion
+        except ImportError:
+            from coverdrive.extract.espn_html_extractor import run_ingestion
 
         run_ingestion(mode="scrape")
 
     @task(task_id="extract_cricsheet_archive")
     def extract_cricsheet_archive() -> None:
-        from coverdrive.extract.cricsheet_archive import extract_telemetry_archives
+        try:
+            from src.ingestion.cricsheet_archive import extract_telemetry_archives
+        except ImportError:
+            from coverdrive.extract.cricsheet_archive import extract_telemetry_archives
 
         extract_telemetry_archives()
 
     @task(task_id="extract_weather_api")
     def extract_weather_api() -> None:
-        from coverdrive.extract.open_meteo_api import run_ingestion
+        try:
+            from src.ingestion.open_meteo_api import run_ingestion
+        except ImportError:
+            from coverdrive.extract.open_meteo_api import run_ingestion
 
         run_ingestion()
 
     transform_silver = BashOperator(
         task_id="transform_silver",
         retries=0,
-        bash_command="python -m src.coverdrive.processing.silver_pyspark_etl",
+        bash_command="python -m src.ingestion.silver_pyspark_etl",
         env={
             "SILVER_S3_PATH": os.environ.get("SILVER_S3_PATH") or "s3a://coverdrive-lake/silver/",
             "GOLD_S3_PATH": os.environ.get("GOLD_S3_PATH") or "s3a://coverdrive-lake/gold/",
@@ -113,7 +122,7 @@ def coverdrive_telemetry_refresh() -> None:
     transform_cricsheet_silver = BashOperator(
         task_id="transform_cricsheet_silver",
         retries=0,
-        bash_command="python -m src.coverdrive.processing.silver_cricsheet_etl",
+        bash_command="python -m src.ingestion.silver_cricsheet_etl",
         env={
             "COVERDRIVE_S3_ENDPOINT": os.environ.get("COVERDRIVE_S3_ENDPOINT", ""),
             "COVERDRIVE_S3_ACCESS_KEY": os.environ.get("COVERDRIVE_S3_ACCESS_KEY", ""),
@@ -125,7 +134,7 @@ def coverdrive_telemetry_refresh() -> None:
     transform_weather_silver = BashOperator(
         task_id="transform_weather_silver",
         retries=0,
-        bash_command="python -m src.coverdrive.processing.silver_weather_etl",
+        bash_command="python -m src.ingestion.silver_weather_etl",
         env={
             "COVERDRIVE_S3_ENDPOINT": os.environ.get("COVERDRIVE_S3_ENDPOINT", ""),
             "COVERDRIVE_S3_ACCESS_KEY": os.environ.get("COVERDRIVE_S3_ACCESS_KEY", ""),
@@ -137,7 +146,10 @@ def coverdrive_telemetry_refresh() -> None:
     @task(task_id="enforce_silver_data_contracts", retries=0)
     def enforce_silver_data_contracts() -> None:
         """Hard quality gate. Halts DAG before dbt execution if Pandera contracts fail."""
-        from coverdrive.contracts.pandera_gates import run_quality_gate
+        try:
+            from src.quality.validation_rules import run_quality_gate
+        except ImportError:
+            from coverdrive.contracts.pandera_gates import run_quality_gate
 
         run_quality_gate()
 

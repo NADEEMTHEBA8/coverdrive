@@ -67,3 +67,7 @@ crash.*.log
 .AppleDouble
 .LSOverride
 Thumbs.db
+
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*

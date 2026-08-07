@@ -1,0 +1,68 @@
+flowchart LR
+    classDef card_python fill:#FFFFFF,stroke:#3B82F6,stroke-width:2px,color:#0F172A;
+    classDef card_s3 fill:#FFFFFF,stroke:#F59E0B,stroke-width:2px,color:#0F172A;
+    classDef card_airflow fill:#FFFFFF,stroke:#0284C7,stroke-width:2px,color:#0F172A;
+    classDef card_spark fill:#FFFFFF,stroke:#EA580C,stroke-width:2px,color:#0F172A;
+    classDef card_dbt fill:#FFFFFF,stroke:#EF4444,stroke-width:2px,color:#0F172A;
+    classDef card_athena fill:#FFFFFF,stroke:#0284C7,stroke-width:3px,color:#0F172A;
+    classDef card_redis fill:#FFFFFF,stroke:#DC2626,stroke-width:2px,color:#0F172A;
+    classDef card_fastapi fill:#FFFFFF,stroke:#10B981,stroke-width:2px,color:#0F172A;
+    classDef card_pandera fill:#FFFFFF,stroke:#A855F7,stroke-width:2px,color:#0F172A;
+    classDef card_glue fill:#FFFFFF,stroke:#8B5CF6,stroke-width:2px,color:#0F172A;
+    classDef card_dlq fill:#FEF2F2,stroke:#EF4444,stroke-width:2px,color:#991B1B;
+
+    subgraph AWS_VPC ["🛡️ <b>AWS PRIVATE VPC (SECURITY & IAM PERIMETER)</b>"]
+        direction LR
+
+        subgraph S1 ["<b>STEP 1: INGESTION</b>"]
+            direction TB
+            Src1["📄 <b>Cricsheet Data</b><br/>Match JSON / CSV"]:::card_python
+            Src2["🌐 <b>ESPNcricinfo</b><br/>HTML Scrapers"]:::card_python
+            Src3["🌤️ <b>Open-Meteo API</b><br/>Weather REST Feeds"]:::card_python
+            Ingest["<span style='display:inline-block;width:27px;height:27px;'><img src='https://raw.githubusercontent.com/devicons/devicon/master/icons/python/python-original.svg' width='27' height='27'/></span><br/><b style='color:#2563EB;'>AWS ECS Fargate</b><br/>Python Ingest Tasks"]:::card_python
+            Src1 --> Ingest
+            Src2 --> Ingest
+            Src3 --> Ingest
+        end
+
+        subgraph S2 ["<b>STEP 2: BRONZE & QUALITY</b>"]
+            direction TB
+            Bronze["<span style='display:inline-block;width:27px;height:27px;'><img src='https://raw.githubusercontent.com/devicons/devicon/master/icons/amazonwebservices/amazonwebservices-original-wordmark.svg' width='27' height='27'/></span><br/><b style='color:#D97706;'>AWS S3 Bronze Lake</b><br/>Raw Parquet Storage"]:::card_s3
+            Airflow["<span style='display:inline-block;width:27px;height:27px;'><img src='https://raw.githubusercontent.com/devicons/devicon/master/icons/apacheairflow/apacheairflow-original.svg' width='27' height='27'/></span><br/><b style='color:#017CEE;'>AWS MWAA Airflow</b><br/>Managed Orchestrator"]:::card_airflow
+            Pandera["🛡️<br/><b style='color:#C026D3;'>Pandera Contracts</b><br/>Shift-Left Schema Guard"]:::card_pandera
+            DLQ["📥<br/><b style='color:#DC2626;'>S3 DLQ Bucket</b><br/><b style='color:#991B1B;'>Quarantine Bad Data</b>"]:::card_dlq
+
+            Airflow --> Pandera
+            Pandera -.->|Invalid Schema| DLQ
+        end
+
+        subgraph S3 ["<b>STEP 3: COMPUTE & GOVERNANCE</b>"]
+            direction TB
+            Spark["<span style='display:inline-block;width:27px;height:27px;'><img src='https://raw.githubusercontent.com/devicons/devicon/master/icons/apachespark/apachespark-original.svg' width='27' height='27'/></span><br/><b style='color:#EA580C;'>EMR Serverless Spark</b><br/>AQE Skew-Join Processing"]:::card_spark
+            Glue["🗂️ <b>AWS Glue Catalog</b><br/>Centralized Metastore"]:::card_glue
+            Silver["<span style='display:inline-block;width:27px;height:27px;'><img src='https://raw.githubusercontent.com/devicons/devicon/master/icons/amazonwebservices/amazonwebservices-original-wordmark.svg' width='27' height='27'/></span><br/><b style='color:#D97706;'>AWS S3 Silver Lake</b><br/>Cleaned & Typed Parquet"]:::card_s3
+            dbt["🟧<br/><b style='color:#EF4444;'>dbt-Athena Core 1.8</b><br/>42/42 Passed Quality Tests"]:::card_dbt
+            Gold["<span style='display:inline-block;width:27px;height:27px;'><img src='https://raw.githubusercontent.com/devicons/devicon/master/icons/amazonwebservices/amazonwebservices-original-wordmark.svg' width='27' height='27'/></span><br/><b style='color:#D97706;'>AWS S3 Gold Lake</b><br/>Enriched Player Marts"]:::card_s3
+
+            Spark --> Silver
+            Silver --> dbt
+            dbt --> Gold
+            Glue -. Metastore Sync .-> Silver
+            Glue -. Metastore Sync .-> Gold
+        end
+
+        subgraph S4 ["<b>STEP 4: SERVING & ANALYTICS</b>"]
+            direction TB
+            Athena["<span style='display:inline-block;width:27px;height:27px;'><img src='https://raw.githubusercontent.com/devicons/devicon/master/icons/amazonwebservices/amazonwebservices-original-wordmark.svg' width='27' height='27'/></span><br/><b style='color:#0284C7;'>AWS Athena SQL</b><br/>Serverless Query Engine"]:::card_athena
+            Redis["<span style='display:inline-block;width:27px;height:27px;'><img src='https://raw.githubusercontent.com/devicons/devicon/master/icons/redis/redis-original.svg' width='27' height='27'/></span><br/><b style='color:#DC2626;'>ElastiCache Redis</b><br/>Sub-10ms Hot Query Cache"]:::card_redis
+            FastAPI["<span style='display:inline-block;width:27px;height:27px;'><img src='https://raw.githubusercontent.com/devicons/devicon/master/icons/fastapi/fastapi-original.svg' width='27' height='27'/></span><br/><b style='color:#10B981;'>FastAPI on ECS</b><br/>Stateless REST API"]:::card_fastapi
+
+            Athena --> Redis
+            Redis --> FastAPI
+        end
+
+        Ingest -->|1. Write Raw| Bronze
+        Bronze -->|2. Validate| Pandera
+        Pandera -->|3. Clean & Process| Spark
+        Gold -->|4. Query Gold| Athena
+    end
