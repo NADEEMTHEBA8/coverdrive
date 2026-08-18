@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Final
 
 import pandas as pd
-import pyarrow as pa  # type: ignore[import-untyped]
-import pyarrow.parquet as pq  # type: ignore[import-untyped]
+import pyarrow as pa
+import pyarrow.parquet as pq
 import requests
 from bs4 import BeautifulSoup
 
@@ -28,13 +28,7 @@ from src.common.utils import (
 )
 
 log = get_logger(__name__)
-
-RETRYABLE_HTTP_ERRORS: Final = (
-    requests.ConnectionError,
-    requests.Timeout,
-    requests.HTTPError,
-)
-
+RETRYABLE_HTTP_ERRORS: Final = (requests.ConnectionError, requests.Timeout, requests.HTTPError)
 DEFAULT_SIGNATURE_COLUMNS: Final = ["player", "runs"]
 
 
@@ -60,25 +54,18 @@ def _parse_html_table(html: str, expected_signatures: list[str] | None = None) -
     Probes HTML tables with BeautifulSoup and pandas to locate the target table,
     preventing silent failures when upstream DOM positions alter.
     """
-    signatures = [s.lower() for s in (expected_signatures or DEFAULT_SIGNATURE_COLUMNS)]
+    signatures = [s.lower() for s in expected_signatures or DEFAULT_SIGNATURE_COLUMNS]
     soup = BeautifulSoup(html, "lxml")
     available_tables = soup.find_all("table")
-
     if not available_tables:
         raise SchemaDriftError("No HTML tables located in the scraped payload.")
-
     parsed_tables = pd.read_html(io.StringIO(html), flavor="lxml")
-
-    # Try signature matching across all tables first
     for candidate_df in parsed_tables:
         cols_lower = [str(c).lower() for c in candidate_df.columns]
         if all(any(sig in col for col in cols_lower) for sig in signatures):
             return candidate_df
-
-    # Fallback to index 2 if signature isn't strict, or raise drift error
     if len(parsed_tables) > 2:
         return parsed_tables[2]
-
     raise SchemaDriftError(
         f"Schema drift detected. Expected signatures {signatures} not found in scraped tables."
     )
@@ -89,35 +76,25 @@ def scrape_table(source_name: str, cfg: PipelineConfig) -> pd.DataFrame:
     source = cfg.sources[source_name]
     retrier = make_retrier(RETRYABLE_HTTP_ERRORS)
     log.info("scrape.start", source=source_name, pages=source.pages_to_fetch)
-
     frames: list[pd.DataFrame] = []
     for page in range(1, source.pages_to_fetch + 1):
         params: dict[str, str | int] = {**source.params, "page": page}
         page_log = log.bind(source=source_name, page=page)
-
         for attempt in retrier:
             with attempt:
                 html = _fetch_page(source.base_url, params, cfg)
                 df = _parse_html_table(html)
-
         if df.empty:
             page_log.info("scrape.page_empty_stop")
             break
         frames.append(df)
         page_log.info("scrape.page_ok", rows=len(df))
-
     if not frames:
         raise RuntimeError(f"No rows scraped for source {source_name!r}")
-
     combined = pd.concat(frames, ignore_index=True)
-
     for col in combined.columns:
         if combined[col].dtype == object:
-            combined[col] = pd.to_numeric(
-                combined[col],
-                errors="coerce",
-            )
-
+            combined[col] = pd.to_numeric(combined[col], errors="coerce")
     log.info("scrape.complete", source=source_name, total_rows=len(combined))
     return combined
 
@@ -133,30 +110,22 @@ def load_from_fixtures(source_name: str, fixtures_dir: Path) -> pd.DataFrame:
     return df
 
 
-def write_bronze(
-    df: pd.DataFrame,
-    table: str,
-    ingestion_date: datetime | None = None,
-) -> str:
+def write_bronze(df: pd.DataFrame, table: str, ingestion_date: datetime | None = None) -> str:
     """Write DataFrame to Bronze Parquet partition. Overwrites on ingestion_date."""
     cfg = load_pipeline_config()
     settings = get_settings()
     key = build_partition_path("bronze", table, ingestion_date)
     write_log = log.bind(table=table, key=key, rows=len(df))
-
     table_pa = pa.Table.from_pandas(df)
-
     tmp_path = ""
     with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
         tmp_path = tmp.name
-
     try:
         with pq.ParquetWriter(
             tmp_path, table_pa.schema, compression=cfg.storage.compression
         ) as writer:
             for batch in table_pa.to_batches(max_chunksize=10000):
                 writer.write_batch(batch)
-
         file_size = Path(tmp_path).stat().st_size
         s3 = get_s3_client()
         with open(tmp_path, "rb") as f:
@@ -168,22 +137,18 @@ def write_bronze(
             )
     finally:
         Path(tmp_path).unlink(missing_ok=True)
-
     uri = f"s3://{settings.coverdrive_s3_bucket}/{key}"
     write_log.info("bronze.written", uri=uri, bytes=file_size)
     return uri
 
 
 def run_ingestion(
-    mode: str,
-    fixtures_dir: Path = Path("tests/fixtures"),
-    ingestion_date: datetime | None = None,
+    mode: str, fixtures_dir: Path = Path("tests/fixtures"), ingestion_date: datetime | None = None
 ) -> dict[str, str]:
     """Run ingestion for configured sources. Returns {table: written_uri}."""
     cfg = load_pipeline_config()
     ts = ingestion_date or datetime.now(UTC)
     written: dict[str, str] = {}
-
     for source_name in cfg.sources:
         source_log = log.bind(source=source_name, mode=mode)
         source_log.info("ingest.start")
@@ -199,7 +164,6 @@ def run_ingestion(
         except Exception:
             source_log.exception("ingest.failed")
             raise
-
     log.info("ingest.all_sources_complete", count=len(written))
     return written
 
@@ -220,7 +184,6 @@ def main() -> int:
         help="Override partition date (YYYY-MM-DD).",
     )
     args = parser.parse_args()
-
     configure_logging()
     try:
         run_ingestion(mode=args.mode, ingestion_date=args.ingestion_date)

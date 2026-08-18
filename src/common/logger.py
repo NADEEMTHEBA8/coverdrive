@@ -27,10 +27,6 @@ from tenacity import (
     wait_exponential,
 )
 
-# ─── Config models ───────────────────────────────────────────────────────────
-# Pipeline config from conf/pipeline.yaml. Strongly typed so a typo in YAML
-# fails at startup, not at run time.
-
 
 class _RetryConfig(BaseModel):
     max_attempts: int = Field(ge=1, le=10)
@@ -61,7 +57,7 @@ class _StorageConfig(BaseModel):
 
 class _TableQualityConfig(BaseModel):
     min_rows: int
-    min_rows_fixtures: int | None = None  # used when COVERDRIVE_USE_FIXTURES=1
+    min_rows_fixtures: int | None = None
     max_null_ratio: float = Field(ge=0, le=1)
     runs_max: int | None = None
     strike_rate_max: float | None = None
@@ -84,33 +80,21 @@ class PipelineConfig(BaseModel):
     quality: _QualityConfig
 
 
-# ─── Runtime settings (env-driven) ───────────────────────────────────────────
-# Settings that vary per environment (local/ci/prod) come from env vars,
-# not the YAML file. Twelve-factor app principle.
-
-
 class Settings(BaseSettings):
     """Environment-driven settings. Defaults match docker-compose local stack."""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
-
     coverdrive_env: Literal["local", "ci", "prod"] = "local"
-    coverdrive_use_fixtures: bool = (
-        False  # when True, quality gates use the relaxed fixtures threshold
-    )
+    coverdrive_use_fixtures: bool = False
     log_level: str = "INFO"
-
     coverdrive_s3_endpoint: str = "http://localhost:9000"
     coverdrive_s3_access_key: str = "minioadmin"
     coverdrive_s3_secret_key: str = "minioadmin"
     coverdrive_s3_bucket: str = "coverdrive"
     coverdrive_s3_use_ssl: bool = False
-
     coverdrive_warehouse_path: str = "data/warehouse.duckdb"
-
-    api_host: str = "0.0.0.0"  # noqa: S104  # binding all interfaces is intentional for container
+    api_host: str = "0.0.0.0"
     api_port: int = 8000
-
     slack_webhook_url: str | None = None
 
 
@@ -131,21 +115,13 @@ def load_pipeline_config(config_path: str | Path = "conf/pipeline.yaml") -> Pipe
     return PipelineConfig.model_validate(raw)
 
 
-# ─── Logging ─────────────────────────────────────────────────────────────────
-# structlog with JSON output in prod, human-readable console in local dev.
-# Bound context (e.g. run_id, table) propagates through nested calls.
-
-
 def configure_logging(level: str | None = None) -> None:
     """Configure structlog. Call once at process start (idempotent)."""
     settings = get_settings()
     log_level = (level or settings.log_level).upper()
     logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=getattr(logging, log_level, logging.INFO),
+        format="%(message)s", stream=sys.stdout, level=getattr(logging, log_level, logging.INFO)
     )
-
     processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
@@ -157,7 +133,6 @@ def configure_logging(level: str | None = None) -> None:
         processors.append(structlog.dev.ConsoleRenderer(colors=True))
     else:
         processors.append(structlog.processors.JSONRenderer())
-
     structlog.configure(
         processors=processors,
         wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, log_level)),
@@ -168,11 +143,6 @@ def configure_logging(level: str | None = None) -> None:
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Return a structured logger. Call after configure_logging."""
     return cast(structlog.stdlib.BoundLogger, structlog.get_logger(name))
-
-
-# ─── Retry decorator ─────────────────────────────────────────────────────────
-# Wraps any function with tenacity exponential backoff + structured logging
-# of each retry. Used for HTTP calls, S3 writes, etc.
 
 
 def _log_retry(retry_state: RetryCallState) -> None:
@@ -188,17 +158,13 @@ def _log_retry(retry_state: RetryCallState) -> None:
     )
 
 
-def make_retrier(
-    retryable_exceptions: tuple[type[BaseException], ...] = (Exception,),
-) -> Retrying:
+def make_retrier(retryable_exceptions: tuple[type[BaseException], ...] = (Exception,)) -> Retrying:
     """Build a Retrying object from pipeline config. Caller wraps their function."""
     cfg = load_pipeline_config().http.retry
     return Retrying(
         stop=stop_after_attempt(cfg.max_attempts),
         wait=wait_exponential(
-            multiplier=cfg.multiplier,
-            min=cfg.initial_wait_seconds,
-            max=cfg.max_wait_seconds,
+            multiplier=cfg.multiplier, min=cfg.initial_wait_seconds, max=cfg.max_wait_seconds
         ),
         retry=retry_if_exception_type(retryable_exceptions),
         before_sleep=_log_retry,
@@ -206,10 +172,7 @@ def make_retrier(
     )
 
 
-# ─── S3 helpers ──────────────────────────────────────────────────────────────
-
-
-def get_s3_client() -> Any:  # noqa: ANN401
+def get_s3_client() -> Any:
     """Return a boto3 S3 client configured for MinIO/AWS via env settings.
 
     If `coverdrive_s3_endpoint` is empty, the kwarg is omitted entirely so
@@ -231,9 +194,7 @@ def get_s3_client() -> Any:  # noqa: ANN401
 
 
 def build_partition_path(
-    layer: Literal["bronze", "silver"],
-    table: str,
-    ingestion_date: datetime | None = None,
+    layer: Literal["bronze", "silver"], table: str, ingestion_date: datetime | None = None
 ) -> str:
     """Build the S3 key prefix for a partition.
 

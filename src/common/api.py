@@ -33,9 +33,6 @@ from src.common.utils import configure_logging, get_logger, get_settings
 log = get_logger(__name__)
 
 
-# ─── Response models (also the OpenAPI schema) ────────────────────────────────
-
-
 class HealthResponse(BaseModel):
     status: str
     version: str = version("coverdrive")
@@ -83,11 +80,6 @@ class PaginatedPlayers(BaseModel):
     items: list[PlayerStats]
 
 
-# ─── DuckDB connection ────────────────────────────────────────────────────────
-# DuckDB connections are cheap but not thread-safe. Use a short-lived
-# read-only connection per request; FastAPI runs handlers concurrently.
-
-
 @contextmanager
 def warehouse_conn() -> Iterator[duckdb.DuckDBPyConnection]:
     """Yield a read-only DuckDB connection. Closes deterministically."""
@@ -97,9 +89,6 @@ def warehouse_conn() -> Iterator[duckdb.DuckDBPyConnection]:
         yield conn
     finally:
         conn.close()
-
-
-# ─── Lifespan: bind config, ping warehouse on startup ─────────────────────────
 
 
 @asynccontextmanager
@@ -120,11 +109,8 @@ app = FastAPI(
 )
 
 
-# ─── Middleware: request logging + timing ─────────────────────────────────────
-
-
 @app.middleware("http")
-async def log_requests(request: Request, call_next):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201
+async def log_requests(request: Request, call_next):
     start = time.perf_counter()
     response = await call_next(request)
     duration_ms = (time.perf_counter() - start) * 1000
@@ -138,9 +124,6 @@ async def log_requests(request: Request, call_next):  # type: ignore[no-untyped-
     return response
 
 
-# ─── Exception handlers ───────────────────────────────────────────────────────
-
-
 @app.exception_handler(duckdb.Error)
 async def handle_duckdb_error(_: Request, exc: duckdb.Error) -> JSONResponse:
     log.exception("api.warehouse_error")
@@ -148,9 +131,6 @@ async def handle_duckdb_error(_: Request, exc: duckdb.Error) -> JSONResponse:
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content={"detail": "warehouse unavailable", "error": str(exc)},
     )
-
-
-# ─── Endpoints ────────────────────────────────────────────────────────────────
 
 
 @app.get("/healthz", response_model=HealthResponse, tags=["health"])
@@ -180,20 +160,11 @@ def readyz() -> ReadyResponse:
 
 
 @app.get("/api/v1/rankings/batsmen", response_model=list[RankingEntry], tags=["rankings"])
-def top_batsmen(
-    limit: Annotated[int, Query(ge=1, le=200)] = 25,
-) -> list[RankingEntry]:
+def top_batsmen(limit: Annotated[int, Query(ge=1, le=200)] = 25) -> list[RankingEntry]:
     """Top batsmen by PCA composite score, descending."""
     with warehouse_conn() as conn:
         rows = conn.execute(
-            """
-            SELECT
-                ROW_NUMBER() OVER (ORDER BY pca_score DESC) AS rank,
-                player, country_tag, pca_score, matches, runs AS primary_metric
-            FROM main_marts.mart_top_batsmen
-            ORDER BY pca_score DESC
-            LIMIT ?
-            """,
+            "\n            SELECT\n                ROW_NUMBER() OVER (ORDER BY pca_score DESC) AS rank,\n                player, country_tag, pca_score, matches, runs AS primary_metric\n            FROM main_marts.mart_top_batsmen\n            ORDER BY pca_score DESC\n            LIMIT ?\n            ",
             [limit],
         ).fetchall()
     cols = ["rank", "player", "country_tag", "pca_score", "matches", "primary_metric"]
@@ -201,20 +172,11 @@ def top_batsmen(
 
 
 @app.get("/api/v1/rankings/bowlers", response_model=list[RankingEntry], tags=["rankings"])
-def top_bowlers(
-    limit: Annotated[int, Query(ge=1, le=200)] = 25,
-) -> list[RankingEntry]:
+def top_bowlers(limit: Annotated[int, Query(ge=1, le=200)] = 25) -> list[RankingEntry]:
     """Top bowlers by PCA composite score, descending."""
     with warehouse_conn() as conn:
         rows = conn.execute(
-            """
-            SELECT
-                ROW_NUMBER() OVER (ORDER BY pca_score DESC) AS rank,
-                player, country_tag, pca_score, matches, wickets AS primary_metric
-            FROM main_marts.mart_top_bowlers
-            ORDER BY pca_score DESC
-            LIMIT ?
-            """,
+            "\n            SELECT\n                ROW_NUMBER() OVER (ORDER BY pca_score DESC) AS rank,\n                player, country_tag, pca_score, matches, wickets AS primary_metric\n            FROM main_marts.mart_top_bowlers\n            ORDER BY pca_score DESC\n            LIMIT ?\n            ",
             [limit],
         ).fetchall()
     cols = ["rank", "player", "country_tag", "pca_score", "matches", "primary_metric"]
@@ -226,11 +188,7 @@ def player_stats(player: str) -> PlayerStats:
     """Career stats for a single player (lowercased name)."""
     with warehouse_conn() as conn:
         row = conn.execute(
-            """
-            SELECT player, country_tag, matches, innings, runs, wickets, pca_score
-            FROM main_marts.dim_player
-            WHERE LOWER(player) = LOWER(?)
-            """,
+            "\n            SELECT player, country_tag, matches, innings, runs, wickets, pca_score\n            FROM main_marts.dim_player\n            WHERE LOWER(player) = LOWER(?)\n            ",
             [player],
         ).fetchone()
     if row is None:
@@ -255,37 +213,16 @@ def player_predictive_context(player: str) -> PlayerPredictiveContext:
     """Predictive context based on weather and venue (from Cricsheet fact model)."""
     with warehouse_conn() as conn:
         row = conn.execute(
-            """
-            SELECT
-                p.player_name,
-                AVG(CASE WHEN w.weather_condition = 'Rainy'
-                    THEN f.runs_batter ELSE NULL END) as avg_runs_rain,
-                AVG(CASE WHEN w.weather_condition = 'Hot'
-                    THEN f.runs_batter ELSE NULL END) as avg_runs_hot,
-                COUNT(f.match_id) as total_balls_faced
-            FROM main_marts.fact_ball_by_ball f
-            JOIN main_marts.dim_player_cricsheet p ON f.batter_id = p.player_id
-            LEFT JOIN main_marts.dim_weather w ON f.weather_id = w.weather_id
-            WHERE LOWER(p.player_name) LIKE LOWER(?)
-            GROUP BY p.player_name
-            """,
+            "\n            SELECT\n                p.player_name,\n                AVG(CASE WHEN w.weather_condition = 'Rainy'\n                    THEN f.runs_batter ELSE NULL END) as avg_runs_rain,\n                AVG(CASE WHEN w.weather_condition = 'Hot'\n                    THEN f.runs_batter ELSE NULL END) as avg_runs_hot,\n                COUNT(f.match_id) as total_balls_faced\n            FROM main_marts.fact_ball_by_ball f\n            JOIN main_marts.dim_player_cricsheet p ON f.batter_id = p.player_id\n            LEFT JOIN main_marts.dim_weather w ON f.weather_id = w.weather_id\n            WHERE LOWER(p.player_name) LIKE LOWER(?)\n            GROUP BY p.player_name\n            ",
             [f"%{player}%"],
         ).fetchone()
-
     if row is None:
         raise HTTPException(
             status_code=404, detail=f"Player predictive context not found: {player}"
         )
-
     return PlayerPredictiveContext(
-        player=row[0],
-        avg_runs_in_rain=row[1],
-        avg_runs_in_hot=row[2],
-        total_balls_faced=row[3],
+        player=row[0], avg_runs_in_rain=row[1], avg_runs_in_hot=row[2], total_balls_faced=row[3]
     )
-
-
-# ─── Entrypoint ───────────────────────────────────────────────────────────────
 
 
 def main() -> int:
@@ -295,7 +232,7 @@ def main() -> int:
         "coverdrive.api:app",
         host=settings.api_host,
         port=settings.api_port,
-        log_config=None,  # We provide our own structured logging.
+        log_config=None,
         reload=settings.coverdrive_env == "local",
     )
     return 0

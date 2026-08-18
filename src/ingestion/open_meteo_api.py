@@ -8,21 +8,11 @@ from typing import Any, Final
 import requests
 from requests.exceptions import RequestException
 from structlog import get_logger
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from src.common.utils import (
-    configure_logging,
-    get_s3_client,
-    get_settings,
-)
+from src.common.utils import configure_logging, get_s3_client, get_settings
 
 log = get_logger(__name__)
-
 GEOCODE_ENDPOINT: Final = "https://geocoding-api.open-meteo.com/v1/search"
 WEATHER_ENDPOINT: Final = "https://archive-api.open-meteo.com/v1/archive"
 
@@ -49,15 +39,14 @@ def fetch_venue_coordinates(city_name: str) -> tuple[float, float] | None:
     except RequestException as err:
         log.error("geocoding_error", city=city_name, error=str(err))
         raise
-
     payload: dict[str, Any] = response.json()
     results = payload.get("results")
     if not results:
         return None
     res = results[0]
-    lat, lon = res.get("latitude"), res.get("longitude")
+    lat, lon = (res.get("latitude"), res.get("longitude"))
     if lat is not None and lon is not None:
-        return float(lat), float(lon)
+        return (float(lat), float(lon))
     return None
 
 
@@ -86,7 +75,6 @@ def fetch_historical_weather(lat: float, lon: float, date_str: str) -> dict[str,
     except RequestException as err:
         log.error("weather_error", lat=lat, lon=lon, date=date_str, error=str(err))
         raise
-
     payload: dict[str, Any] = response.json()
     return payload
 
@@ -98,13 +86,10 @@ def run_ingestion() -> None:
     bucket_name = get_settings().coverdrive_s3_bucket
     bronze_prefix = "bronze/cricsheet"
     weather_prefix = "bronze/weather"
-
     paginator = s3_client.get_paginator("list_objects_v2")
     pages = paginator.paginate(Bucket=bucket_name, Prefix=bronze_prefix)
-
     processed_cities: dict[str, tuple[float, float] | None] = {}
     uploaded_count = 0
-
     for page in pages:
         if "Contents" not in page:
             continue
@@ -112,27 +97,20 @@ def run_ingestion() -> None:
             key = obj["Key"]
             if not key.endswith(".json"):
                 continue
-
             resp = s3_client.get_object(Bucket=bucket_name, Key=key)
             match_data = json.loads(resp["Body"].read().decode("utf-8"))
-
             info = match_data.get("info", {})
             city = info.get("city")
             dates = info.get("dates", [])
             match_id = key.split("/")[-1].replace(".json", "")
-
             if not city or not dates:
                 continue
-
             date_str = dates[0]
-
             if city not in processed_cities:
                 processed_cities[city] = fetch_venue_coordinates(city)
-
             coords = processed_cities[city]
             if not coords:
                 continue
-
             lat, lon = coords
             weather_payload = fetch_historical_weather(lat, lon, date_str)
             if weather_payload:
@@ -144,10 +122,8 @@ def run_ingestion() -> None:
                     ContentType="application/json",
                 )
                 uploaded_count += 1
-
             if uploaded_count % 10 == 0 and uploaded_count > 0:
                 log.info("ingest_weather.progress", uploaded=uploaded_count)
-
     log.info("ingest_weather.complete", total_uploaded=uploaded_count)
 
 

@@ -29,8 +29,9 @@ def test_build_partition_path_format() -> None:
 
 def test_build_partition_path_silver_layer() -> None:
     fixed_date = datetime(2024, 6, 15, tzinfo=UTC)
-    assert build_partition_path("silver", "bowling", fixed_date) == (
-        "silver/bowling/ingestion_date=2024-06-15/data.parquet"
+    assert (
+        build_partition_path("silver", "bowling", fixed_date)
+        == "silver/bowling/ingestion_date=2024-06-15/data.parquet"
     )
 
 
@@ -52,7 +53,6 @@ def test_write_bronze_is_idempotent(batting_csv: pd.DataFrame, s3_bucket: str) -
     uri1 = ingestion.write_bronze(batting_csv, "batting", ingestion_date=fixed_date)
     uri2 = ingestion.write_bronze(batting_csv, "batting", ingestion_date=fixed_date)
     assert uri1 == uri2
-
     import boto3
 
     s3 = boto3.client("s3", region_name="us-east-1")
@@ -66,7 +66,6 @@ def test_write_bronze_round_trip(batting_csv: pd.DataFrame, s3_bucket: str) -> N
     """Written Parquet reads back identical."""
     fixed_date = datetime(2024, 6, 15, tzinfo=UTC)
     ingestion.write_bronze(batting_csv, "batting", ingestion_date=fixed_date)
-
     import boto3
 
     s3 = boto3.client("s3", region_name="us-east-1")
@@ -89,34 +88,30 @@ def test_fetch_page_retries_on_503(monkeypatch: pytest.MonkeyPatch) -> None:
     """Transient 503s recover; persistent ones raise after max_attempts."""
     call_count = {"n": 0}
 
-    def flaky_get(*args, **kwargs):  # type: ignore[no-untyped-def]
+    def flaky_get(*args, **kwargs):
         call_count["n"] += 1
         response = requests.Response()
         if call_count["n"] < 2:
             response.status_code = 503
             response.reason = "Service Unavailable"
-            # raise_for_status raises HTTPError, which is in RETRYABLE_HTTP_ERRORS
         else:
             response.status_code = 200
             response._content = b"<html><body></body></html>"
         return response
 
     monkeypatch.setattr(requests, "get", flaky_get)
-    # Use the real retry behavior with a tiny number of attempts
     try:
         from src.common.utils import load_pipeline_config
     except ImportError:
         from coverdrive.utils import load_pipeline_config
-
     cfg = load_pipeline_config()
     try:
         from src.common.utils import make_retrier
     except ImportError:
         from coverdrive.utils import make_retrier
-
     retrier = make_retrier(ingestion.RETRYABLE_HTTP_ERRORS)
     for attempt in retrier:
         with attempt:
             html = ingestion._fetch_page("http://test", {}, cfg)
-    assert call_count["n"] >= 2  # At least one retry happened
+    assert call_count["n"] >= 2
     assert html == "<html><body></body></html>"

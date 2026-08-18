@@ -10,14 +10,9 @@ from typing import Final
 import requests
 from structlog import get_logger
 
-from src.common.utils import (
-    configure_logging,
-    get_s3_client,
-    get_settings,
-)
+from src.common.utils import configure_logging, get_s3_client, get_settings
 
 log = get_logger(__name__)
-
 CRICSHEET_ARCHIVE_URL: Final = "https://cricsheet.org/downloads/t20s_json.zip"
 MAX_MATCHES_LIMIT: Final = 50
 
@@ -32,17 +27,12 @@ def extract_telemetry_archives(
     """
     if upload_limit is None:
         upload_limit = int(os.getenv("COVERDRIVE_MATCH_LIMIT", str(MAX_MATCHES_LIMIT)))
-
     log.info("extract_cricsheet.start", url=archive_url, upload_limit=upload_limit)
-
     archive_response = requests.get(archive_url, timeout=30)
     archive_response.raise_for_status()
-
     storage_client = get_s3_client()
     target_bucket = get_settings().coverdrive_s3_bucket
     s3_prefix = "bronze/cricsheet"
-
-    # Direct Zip Landing (Production Mode: upload 1 single zip in ~1.5 seconds)
     if upload_limit <= 0 or os.getenv("COVERDRIVE_DIRECT_ZIP", "1") == "1":
         archive_key = f"{s3_prefix}/t20s_json.zip"
         log.info("extract_cricsheet.direct_zip.start", target=f"s3://{target_bucket}/{archive_key}")
@@ -54,7 +44,6 @@ def extract_telemetry_archives(
         )
         log.info("extract_cricsheet.direct_zip.complete", bytes=len(archive_response.content))
         return
-
     uploaded_count = 0
     with zipfile.ZipFile(io.BytesIO(archive_response.content)) as zip_ref:
         json_filenames = [f for f in zip_ref.namelist() if f.endswith(".json")]
@@ -94,7 +83,6 @@ def extract_telemetry_archives(
                         uploaded=uploaded_count,
                         total=len(target_files),
                     )
-
     log.info("extract_cricsheet.complete", total_uploaded=uploaded_count)
 
 

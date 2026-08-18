@@ -13,10 +13,8 @@ from structlog import get_logger
 
 from src.common.utils import configure_logging, get_s3_client, get_settings
 
-# Ensure PySpark workers match current Python virtualenv interpreter
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-
 log = get_logger(__name__)
 
 
@@ -25,10 +23,7 @@ def process_cricsheet(
 ) -> None:
     """Flatten Cricsheet JSON into matches and ball-by-ball datasets."""
     log.info("cricsheet_etl.start", bronze_path=bronze_path)
-
-    # Check if direct zip archive exists in bronze storage
     settings = get_settings()
-
     is_zip = False
     try:
         s3_client = get_s3_client()
@@ -38,7 +33,6 @@ def process_cricsheet(
         is_zip = True
     except Exception:
         is_zip = False
-
     if is_zip:
         log.info("cricsheet_etl.reading_direct_zip", bucket=settings.coverdrive_s3_bucket)
         s3_client = get_s3_client()
@@ -58,10 +52,7 @@ def process_cricsheet(
         sc = spark.sparkContext
         pairs_rdd = sc.parallelize([zip_bytes]).flatMap(unzip_entries)
         json_rdd = pairs_rdd.map(lambda x: x[1])
-
         raw_df = spark.read.option("multiline", "true").json(json_rdd)
-
-        # Extract match_id from info/meta
         from pyspark.sql.functions import concat_ws, sha2
 
         df = raw_df.withColumn(
@@ -77,15 +68,9 @@ def process_cricsheet(
             ),
         )
     else:
-        # 1. Read Raw JSON (PySpark infers the complex nested schema)
         raw_df = spark.read.option("multiline", "true").json(bronze_path)
-        # Extract match_id from filename (e.g., "1389389.json" -> "1389389")
-        df = raw_df.withColumn("match_id", regexp_extract(input_file_name(), r"(\d+)\.json", 1))
-
+        df = raw_df.withColumn("match_id", regexp_extract(input_file_name(), "(\\d+)\\.json", 1))
     log.info("cricsheet_etl.read", rows=df.count())
-
-    # 2. Extract Match-level metadata (Dimension-ready)
-    # The info struct contains arrays and strings
     matches_df = df.select(
         col("match_id"),
         col("info.dates").getItem(0).alias("match_date"),
@@ -95,12 +80,8 @@ def process_cricsheet(
         col("info.teams").getItem(1).alias("team2"),
         col("info.match_type").alias("match_type"),
     )
-
     matches_df.write.mode("overwrite").parquet(silver_matches_path)
     log.info("cricsheet_etl.matches_written", rows=matches_df.count(), path=silver_matches_path)
-
-    # 3. Flatten Ball-by-Ball data (Fact-ready)
-    # Explode innings -> overs -> deliveries
     innings_df = df.select(col("match_id"), explode(col("innings")).alias("inning"))
     overs_df = innings_df.select(
         col("match_id"),
@@ -113,8 +94,6 @@ def process_cricsheet(
         col("over.over").alias("over_num"),
         explode(col("over.deliveries")).alias("ball"),
     )
-
-    # Extract the delivery details
     flat_balls_df = balls_df.select(
         col("match_id"),
         col("batting_team"),
@@ -124,11 +103,9 @@ def process_cricsheet(
         col("ball.runs.batter").alias("runs_batter"),
         col("ball.runs.extras").alias("runs_extras"),
         col("ball.runs.total").alias("runs_total"),
-        # Extract wicket info (if any)
         col("ball.wickets").getItem(0).getField("kind").alias("wicket_kind"),
         col("ball.wickets").getItem(0).getField("player_out").alias("player_out"),
     )
-
     flat_balls_df.write.mode("overwrite").parquet(silver_balls_path)
     log.info("cricsheet_etl.balls_written", rows=flat_balls_df.count(), path=silver_balls_path)
 
@@ -136,9 +113,7 @@ def process_cricsheet(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Cricsheet ETL")
     parser.add_argument(
-        "--bronze-path",
-        default="s3a://coverdrive/bronze/cricsheet/*.json",
-        help="Input JSON glob",
+        "--bronze-path", default="s3a://coverdrive/bronze/cricsheet/*.json", help="Input JSON glob"
     )
     parser.add_argument(
         "--silver-matches",
@@ -151,7 +126,6 @@ def main() -> None:
         help="Output Parquet path for ball-by-ball",
     )
     args = parser.parse_args()
-
     spark = (
         SparkSession.builder.appName("CricsheetETL")
         .config("spark.driver.memory", "4g")
@@ -161,7 +135,6 @@ def main() -> None:
         )
         .getOrCreate()
     )
-    # Configure S3 credentials for Hadoop S3A (MinIO or AWS S3)
     from src.common.utils import get_settings
 
     settings = get_settings()
@@ -173,7 +146,6 @@ def main() -> None:
         sc._jsc.hadoopConfiguration().set("fs.s3a.endpoint", settings.coverdrive_s3_endpoint)
         sc._jsc.hadoopConfiguration().set("fs.s3a.path.style.access", "true")
         sc._jsc.hadoopConfiguration().set("fs.s3a.connection.ssl.enabled", "false")
-
     process_cricsheet(spark, args.bronze_path, args.silver_matches, args.silver_balls)
 
 

@@ -23,16 +23,10 @@ from pyspark.sql.functions import col, concat, floor, lit, lower, rand, regexp_r
 
 from src.common.utils import configure_logging, get_logger, get_settings
 
-# Ensure PySpark workers match current Python virtualenv interpreter
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-
 configure_logging()
 log = get_logger(__name__)
-
-# Empirically tuned for the ESPN dataset (~2,800 players). At this scale,
-# salting is more educational than necessary — the real value shows up when the
-# dataset grows to millions of delivery-level ball-by-ball rows.
 _SALT_BUCKETS: int = 10
 
 
@@ -45,7 +39,6 @@ def create_spark_session() -> SparkSession:
     settings = get_settings()
     aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", settings.coverdrive_s3_access_key)
     aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", settings.coverdrive_s3_secret_key)
-
     builder = (
         SparkSession.builder.appName("Coverdrive-Gold-ETL")
         .config("spark.driver.memory", "4g")
@@ -60,7 +53,6 @@ def create_spark_session() -> SparkSession:
         .config("spark.hadoop.fs.s3a.access.key", aws_access_key)
         .config("spark.hadoop.fs.s3a.secret.key", aws_secret_key)
     )
-
     s3_endpoint = os.getenv("COVERDRIVE_S3_ENDPOINT")
     if s3_endpoint:
         builder = (
@@ -68,7 +60,6 @@ def create_spark_session() -> SparkSession:
             .config("spark.hadoop.fs.s3a.path.style.access", "true")
             .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
         )
-
     return builder.getOrCreate()
 
 
@@ -76,54 +67,40 @@ def process_silver_to_gold(spark: SparkSession, silver_path: str, gold_path: str
     """Join Silver batting and bowling tables into a Gold player-stats table."""
     batting_path = f"{silver_path}batting/*/*.parquet"
     bowling_path = f"{silver_path}bowling/*/*.parquet"
-
     log.info("spark.read.batting", path=batting_path)
     try:
         batting_df = spark.read.parquet(batting_path)
     except Exception:
         log.exception("spark.read.batting.failed", path=batting_path)
         raise
-
     log.info("spark.read.bowling", path=bowling_path)
     try:
         bowling_df = spark.read.parquet(bowling_path)
     except Exception:
         log.exception("spark.read.bowling.failed", path=bowling_path)
         raise
-
-    # Normalise player names: strip country suffixes like "(IND)" before joining.
     player_col_bat = "player" if "player" in batting_df.columns else "Player"
     player_col_bowl = "player" if "player" in bowling_df.columns else "Player"
     batting_df = batting_df.withColumn(
-        "player_clean", lower(trim(regexp_replace(col(player_col_bat), r"\s*\([^)]+\)\s*$", "")))
+        "player_clean", lower(trim(regexp_replace(col(player_col_bat), "\\s*\\([^)]+\\)\\s*$", "")))
     )
     bowling_df = bowling_df.withColumn(
-        "player_clean", lower(trim(regexp_replace(col(player_col_bowl), r"\s*\([^)]+\)\s*$", "")))
+        "player_clean",
+        lower(trim(regexp_replace(col(player_col_bowl), "\\s*\\([^)]+\\)\\s*$", ""))),
     )
-
-    # Salting: randomise batting key → replicate bowling N times → distribute skew.
     salts_df = spark.range(0, _SALT_BUCKETS).withColumnRenamed("id", "salt")
-
     salted_batting_df = batting_df.withColumn(
-        "salted_key",
-        concat(col("player_clean"), lit("_"), floor(rand() * _SALT_BUCKETS)),
+        "salted_key", concat(col("player_clean"), lit("_"), floor(rand() * _SALT_BUCKETS))
     )
-
     salted_bowling_df = bowling_df.crossJoin(salts_df).withColumn(
-        "salted_key",
-        concat(col("player_clean"), lit("_"), col("salt")),
+        "salted_key", concat(col("player_clean"), lit("_"), col("salt"))
     )
     for c in bowling_df.columns:
         if c != "player_clean":
             salted_bowling_df = salted_bowling_df.withColumnRenamed(c, f"bowl_{c}")
-    # ──────────────────────────────────────────────────────────────────────────
-
-    joined_df = salted_batting_df.join(
-        salted_bowling_df,
-        on="salted_key",
-        how="left",
-    ).drop("salted_key", "salt", "player_clean", "bowl_player_clean")
-
+    joined_df = salted_batting_df.join(salted_bowling_df, on="salted_key", how="left").drop(
+        "salted_key", "salt", "player_clean", "bowl_player_clean"
+    )
     output_path = f"{gold_path}player_stats"
     log.info("spark.write.gold", path=output_path)
     joined_df.write.mode("overwrite").parquet(output_path)

@@ -32,22 +32,13 @@ from src.common.utils import (
 log = get_logger(__name__)
 
 
-class QualityGateFailure(RuntimeError):  # noqa: N818
+class QualityGateFailure(RuntimeError):
     """Raised when one or more quality checks fail.
 
     Airflow's task-failure handler catches this and halts the DAG before
     Gold transformation runs. The message includes structured failure detail
     suitable for Slack/PagerDuty.
     """
-
-
-# ─── Schemas ─────────────────────────────────────────────────────────────────
-# Pandera DataFrameModels read like SQLAlchemy models. Each field carries its
-# constraints; pa.dataframe_check decorates table-level invariants.
-#
-# Numeric thresholds come from pipeline.yaml so they're configurable per env
-# (a CI smoke test might allow fewer rows than prod). We bind them at import
-# via the helper functions below.
 
 
 def _resolve_min_rows(production: int, fixtures: int | None) -> int:
@@ -104,17 +95,17 @@ class BattingSilverSchema(pa.DataFrameModel):
     fifties: Series[pd.Int64Dtype] = pa.Field(ge=0, nullable=True)
 
     class Config:
-        strict = False  # Allow extra columns; we only enforce the contract.
-        coerce = False  # Transform.py already casts. Re-coercing hides bugs.
+        strict = False
+        coerce = False
 
     @pa.dataframe_check
-    def career_span_valid(cls: Any, df: pd.DataFrame) -> Series[bool]:  # type: ignore[misc]  # noqa: N805
+    def career_span_valid(cls: Any, df: pd.DataFrame) -> Series[bool]:
         """end_year >= start_year when both are present."""
         if "career_start_year" not in df or "career_end_year" not in df:
-            return pd.Series([True] * len(df))  # type: ignore[return-value]
+            return pd.Series([True] * len(df))
         both = df["career_start_year"].notna() & df["career_end_year"].notna()
         valid = df.loc[both, "career_end_year"] >= df.loc[both, "career_start_year"]
-        return pd.Series(True, index=df.index).where(~both, valid)  # type: ignore[return-value]
+        return pd.Series(True, index=df.index).where(~both, valid)
 
 
 class BowlingSilverSchema(pa.DataFrameModel):
@@ -146,28 +137,19 @@ class BowlingSilverSchema(pa.DataFrameModel):
         coerce = False
 
 
-# Registry: table name → (schema, config-fetcher)
 _SCHEMAS: Final = {
     "batting": (BattingSilverSchema, _batting_cfg),
     "bowling": (BowlingSilverSchema, _bowling_cfg),
 }
 
 
-# ─── Volume / null checks (Pandera does column-level; these are table-level) ─
-
-
 def _check_row_count(df: pd.DataFrame, table: str, min_rows: int) -> None:
     if len(df) < min_rows:
         raise QualityGateFailure(
-            f"{table}: only {len(df)} rows, expected at least {min_rows}. "
-            "Upstream scrape may have partially failed."
+            f"{table}: only {len(df)} rows, expected at least {min_rows}. Upstream scrape may have partially failed."
         )
 
 
-# Columns that may be entirely absent from a given Bronze source (different
-# ESPN pages return different stat shapes). When 100% null, the column is
-# "optional" — exempt from the null-ratio gate. When partially null at a rate
-# above the threshold, that's a real partial-scrape signal and we halt.
 _OPTIONAL_WHEN_FULLY_NULL: Final = frozenset(
     {
         "fours",
@@ -189,18 +171,14 @@ def _check_null_ratios(df: pd.DataFrame, table: str, max_ratio: float) -> None:
     for col, ratio in null_ratios.items():
         if ratio <= max_ratio:
             continue
-        # 100%-null in a known-optional column is allowed (column absent from source).
         if ratio == 1.0 and col in _OPTIONAL_WHEN_FULLY_NULL:
             continue
         failed[col] = ratio
     if failed:
-        details = ", ".join(f"{col}={ratio:.1%}" for col, ratio in failed.items())
+        details = ", ".join((f"{col}={ratio:.1%}" for col, ratio in failed.items()))
         raise QualityGateFailure(
             f"{table}: null ratio exceeds threshold {max_ratio:.1%} for columns: {details}"
         )
-
-
-# ─── Driver ──────────────────────────────────────────────────────────────────
 
 
 def validate_table(df: pd.DataFrame, table: str) -> None:
@@ -216,17 +194,14 @@ def validate_table(df: pd.DataFrame, table: str) -> None:
     schema, get_cfg = _SCHEMAS[table]
     cfg = get_cfg()
     check_log = log.bind(table=table)
-
     check_log.info("quality.start", rows=len(df))
-    _check_row_count(df, table, cfg["min_rows"])  # type: ignore[arg-type]
+    _check_row_count(df, table, cfg["min_rows"])
     _check_null_ratios(df, table, cfg["max_null_ratio"])
-
     try:
-        schema.validate(df, lazy=True)  # lazy=True surfaces all failures, not first
+        schema.validate(df, lazy=True)
     except (SchemaError, SchemaErrors) as e:
         check_log.error("quality.schema_failed", failure_cases=str(e))
         raise QualityGateFailure(f"{table}: schema validation failed:\n{e}") from e
-
     check_log.info("quality.passed", rows=len(df))
 
 
@@ -249,7 +224,6 @@ def run_quality_gate(ingestion_date: datetime | None = None) -> None:
         except QualityGateFailure as e:
             failures.append(str(e))
             log.error("quality.gate.failure", table=table, error=str(e))
-
     if failures:
         joined = "\n---\n".join(failures)
         raise QualityGateFailure(f"Quality gate failed for {len(failures)} table(s):\n{joined}")
@@ -262,7 +236,7 @@ def main() -> int:
         run_quality_gate()
     except QualityGateFailure:
         log.exception("quality.gate.halt_pipeline")
-        return 2  # Distinguishable exit code for "data quality" vs "infra error"
+        return 2
     except Exception:
         log.exception("quality.unexpected_error")
         return 1

@@ -24,22 +24,16 @@ except ImportError:
     )
     from coverdrive.transform import schema_conform as transform
 
-# ─── Happy path: real fixture data passes ─────────────────────────────────────
-
 
 def test_validate_batting_passes_on_clean_fixture(batting_csv: pd.DataFrame) -> None:
     """A transformed fixture should clear the quality gate."""
     silver = transform.transform_batting(batting_csv)
-    # Fixture is 100 rows; relax min_rows for the test by validating schema only.
     BattingSilverSchema.validate(silver, lazy=True)
 
 
 def test_validate_bowling_passes_on_clean_fixture(bowling_csv: pd.DataFrame) -> None:
     silver = transform.transform_bowling(bowling_csv)
     BowlingSilverSchema.validate(silver, lazy=True)
-
-
-# ─── Schema-level failures ────────────────────────────────────────────────────
 
 
 def test_schema_rejects_negative_runs(batting_csv: pd.DataFrame) -> None:
@@ -62,7 +56,7 @@ def test_schema_rejects_null_player(batting_csv: pd.DataFrame) -> None:
     """Player is the natural key — never nullable."""
     silver = transform.transform_batting(batting_csv)
     silver.loc[0, "player"] = None
-    with pytest.raises(Exception):  # noqa: B017
+    with pytest.raises(Exception):
         BattingSilverSchema.validate(silver, lazy=True)
 
 
@@ -71,11 +65,8 @@ def test_schema_rejects_invalid_career_span(batting_csv: pd.DataFrame) -> None:
     silver = transform.transform_batting(batting_csv).copy()
     silver["career_start_year"] = pd.array([2020] * len(silver), dtype="Int64")
     silver["career_end_year"] = pd.array([2000] * len(silver), dtype="Int64")
-    with pytest.raises(Exception):  # noqa: B017
+    with pytest.raises(Exception):
         BattingSilverSchema.validate(silver, lazy=True)
-
-
-# ─── Table-level checks (row count, null ratio) ──────────────────────────────
 
 
 def test_row_count_check_fails_below_threshold() -> None:
@@ -95,20 +86,14 @@ def test_null_ratio_check_fails_above_threshold() -> None:
 def test_null_ratio_check_passes_when_below_threshold() -> None:
     """A small amount of nullity is acceptable."""
     df = pd.DataFrame({"player": ["a"] * 95 + [None] * 5, "runs": [10] * 100})
-    # Should not raise
-    quality._check_null_ratios(df, "batting", max_ratio=0.10)
-
-
-# ─── Exit code semantics ──────────────────────────────────────────────────────
-# Distinct exit codes let the orchestrator distinguish "bad data" from
-# "bug in code". DAG alerting routes them differently.
+    quality._check_null_ratios(df, "batting", max_ratio=0.1)
 
 
 def test_quality_failure_exception_is_distinguishable() -> None:
     """QualityGateFailure must not be the same class as other RuntimeError types."""
     err = QualityGateFailure("test")
-    assert isinstance(err, RuntimeError)  # for broad catches
-    assert type(err) is QualityGateFailure  # but specifically catchable
+    assert isinstance(err, RuntimeError)
+    assert type(err) is QualityGateFailure
 
 
 def test_validate_table_unknown_table_raises() -> None:

@@ -1,0 +1,30 @@
+dataContractSpecification: 0.9.2
+id: urn:datacontract:platform:user-transactions
+info:
+  title: Production User Transactions Stream
+  version: 2.0.0
+  description: Primary transactional boundary contract for high-throughput pipeline ingestion.
+  owner: platform-engineering
+
+models:
+  transactions:
+    description: Raw ingested user transaction records
+    type: table
+    fields:
+      transaction_id:
+        type: string
+        required: true
+        unique: true
+        description: Primary key UUID string
+      user_id:
+        type: string
+        required: true
+      amount:
+        type: number
+        required: true
+        quality:
+          - type: min
+            mustBe: 0.01
+      timestamp:
+        type: timestamp
+        required: true

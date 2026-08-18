@@ -9,8 +9,6 @@ try:
 except ImportError:
     from coverdrive.transform import schema_conform as transform
 
-# ─── Generic helpers ─────────────────────────────────────────────────────────
-
 
 def test_split_player_country() -> None:
     series = pd.Series(["MS Dhoni (Asia/IND)", "SR Tendulkar (IND)", "Wasim Akram (PAK)"])
@@ -56,24 +54,13 @@ def test_strip_star_suffix_flags_not_out() -> None:
     assert flags.tolist() == [True, False, True]
 
 
-# ─── End-to-end transform on fixture data ────────────────────────────────────
-
-
 def test_transform_batting_produces_clean_schema(batting_csv: pd.DataFrame) -> None:
     out = transform.transform_batting(batting_csv)
-
-    # Required columns present
     for col in ("player", "country_tag", "runs", "average", "matches"):
         assert col in out.columns
-
-    # Player names lowercased
     assert out["player"].str.islower().all()
-
-    # No nulls in critical fields
     assert out["player"].notna().all()
     assert out["runs"].notna().all()
-
-    # Numeric types where expected
     assert pd.api.types.is_integer_dtype(out["runs"])
     assert pd.api.types.is_float_dtype(out["average"])
 
@@ -82,7 +69,6 @@ def test_transform_batting_dedupes_on_natural_key(batting_csv: pd.DataFrame) -> 
     """Duplicating a row in input doesn't duplicate in output."""
     doubled = pd.concat([batting_csv, batting_csv], ignore_index=True)
     out = transform.transform_batting(doubled)
-    # Composite key: player + career_start_year
     if "career_start_year" in out.columns:
         keys = list(zip(out["player"], out["career_start_year"], strict=True))
         assert len(keys) == len(set(keys))
@@ -107,7 +93,6 @@ def test_transform_bowling_filters_zero_wickets(bowling_csv: pd.DataFrame) -> No
 def test_transform_bowling_extracts_country(bowling_csv: pd.DataFrame) -> None:
     """Country tag is extracted from the player string."""
     out = transform.transform_bowling(bowling_csv)
-    # At least some of our sample rows have country tags
     assert out["country_tag"].notna().sum() > 0
 
 
