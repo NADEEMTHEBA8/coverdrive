@@ -33,25 +33,25 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
     load_pipeline_config.cache_clear()
 
 
-@pytest.fixture()
+@pytest.fixture
 def fixtures_dir() -> Path:
     """Path to the test fixtures directory."""
     return Path(__file__).parent / "fixtures"
 
 
-@pytest.fixture()
+@pytest.fixture
 def batting_csv(fixtures_dir: Path) -> pd.DataFrame:
     """The raw batting CSV fixture, loaded as a DataFrame."""
     return pd.read_csv(fixtures_dir / "batting_sample.csv")
 
 
-@pytest.fixture()
+@pytest.fixture
 def bowling_csv(fixtures_dir: Path) -> pd.DataFrame:
     """The raw bowling CSV fixture, loaded as a DataFrame."""
     return pd.read_csv(fixtures_dir / "bowling_sample.csv")
 
 
-@pytest.fixture()
+@pytest.fixture
 def s3_bucket() -> Iterator[str]:
     """Provide a mocked S3 bucket via moto. Yields the bucket name."""
     with mock_aws():
@@ -61,7 +61,7 @@ def s3_bucket() -> Iterator[str]:
         yield bucket
 
 
-@pytest.fixture()
+@pytest.fixture
 def pipeline_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Write a minimal pipeline.yaml into a temp dir and point the loader at it."""
     config_path = tmp_path / "pipeline.yaml"
